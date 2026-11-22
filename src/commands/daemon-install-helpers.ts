@@ -709,6 +709,14 @@ async function buildGatewayInstallEnvironment(params: {
     plan.environment.PATH = mergedPath;
     plan.environmentValueSources.PATH = "inline";
   }
+  if (params.platform === "linux") {
+    plan.environment.MALLOC_ARENA_MAX =
+      durableEnvironment.MALLOC_ARENA_MAX ??
+      params.env.MALLOC_ARENA_MAX ??
+      params.existingEnvironment?.MALLOC_ARENA_MAX ??
+      "2";
+    plan.environmentValueSources.MALLOC_ARENA_MAX = "inline";
+  }
   compactServiceEnvPlanValueSources(plan);
   return {
     environment: plan.environment,
