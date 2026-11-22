@@ -2,7 +2,7 @@
 import fsSync from "node:fs";
 import path from "node:path";
 import { normalizeAgentId } from "./config-utils.js";
-import { readRegularFile, statRegularFile } from "./fs-utils.js";
+import { openLocalFileSafely, statRegularFile } from "./fs-utils.js";
 import { hashText } from "./hash.js";
 import { createSubsystemLogger, redactSensitiveText } from "./openclaw-runtime-io.js";
 import {
@@ -719,6 +719,34 @@ async function yieldSessionEntryParseIfNeeded(
   }
 }
 
+/** Preserve JSONL line numbers, including empty rows and a final unterminated row. */
+async function* streamSessionExportLines(
+  opened: Awaited<ReturnType<typeof openLocalFileSafely>>,
+): AsyncGenerator<string> {
+  if (opened.stat.size === 0) {
+    return;
+  }
+  const input = opened.handle.createReadStream({
+    encoding: "utf8",
+    autoClose: false,
+    start: 0,
+    end: opened.stat.size - 1,
+  });
+  let pending = "";
+  for await (const chunk of input) {
+    const text = pending + String(chunk);
+    let start = 0;
+    for (let newline = text.indexOf("\n"); newline >= 0; newline = text.indexOf("\n", start)) {
+      yield text.slice(start, newline);
+      start = newline + 1;
+    }
+    pending = text.slice(start);
+  }
+  if (pending) {
+    yield pending;
+  }
+}
+
 export async function buildSessionEntry(
   absPath: string,
   opts: BuildSessionEntryOptions = {},
@@ -741,12 +769,10 @@ export async function buildSessionEntry(
         messageTimestampsMs: [],
       };
     }
-    const raw = (
-      await retryTransientMemoryRead(
-        () => readRegularFile({ filePath: absPath }),
-        `read session transcript ${absPath}`,
-      )
-    ).buffer.toString("utf-8");
+    await using opened = await retryTransientMemoryRead(
+      () => openLocalFileSafely({ filePath: absPath }),
+      `open session transcript ${absPath}`,
+    );
     const collected: string[] = [];
     const lineMap: number[] = [];
     const messageTimestampsMs: number[] = [];
@@ -763,12 +789,10 @@ export async function buildSessionEntry(
       opts.generatedByCronRun ?? sessionStoreClassification?.generatedByCronRun ?? false;
     const allowArchiveRecordCronClassification =
       isUsageCountedSessionArchiveTranscriptPath(absPath);
-    for (let jsonlIdx = 0, lineStart = 0; lineStart <= raw.length; jsonlIdx++) {
-      await yieldSessionEntryParseIfNeeded(jsonlIdx, parseYieldEveryLines);
-      const newlineIndex = raw.indexOf("\n", lineStart);
-      const lineEnd = newlineIndex === -1 ? raw.length : newlineIndex;
-      const line = raw.slice(lineStart, lineEnd);
-      lineStart = newlineIndex === -1 ? raw.length + 1 : newlineIndex + 1;
+    let lineNumber = 0;
+    for await (const line of streamSessionExportLines(opened)) {
+      await yieldSessionEntryParseIfNeeded(lineNumber, parseYieldEveryLines);
+      lineNumber += 1;
       if (!line.trim()) {
         continue;
       }
@@ -838,7 +862,7 @@ export async function buildSessionEntry(
         message as { timestamp?: unknown },
       );
       collected.push(...renderedLines);
-      lineMap.push(...renderedLines.map(() => jsonlIdx + 1));
+      lineMap.push(...renderedLines.map(() => lineNumber));
       messageTimestampsMs.push(...renderedLines.map(() => timestampMs));
     }
     const content = collected.join("\n");

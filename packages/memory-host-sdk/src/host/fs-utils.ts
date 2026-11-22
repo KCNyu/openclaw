@@ -2,7 +2,7 @@
 import { configureFsSafePython } from "@openclaw/fs-safe/config";
 // fs-safe facade with Python validation disabled by default for this package's
 // host-side memory file operations.
-export { root } from "@openclaw/fs-safe/root";
+export { openLocalFileSafely, root } from "@openclaw/fs-safe/root";
 export { isPathInside, isPathInsideWithRealpath } from "@openclaw/fs-safe/path";
 export {
   assertNoSymlinkParents,
