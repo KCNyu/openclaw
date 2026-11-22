@@ -30,6 +30,7 @@ jobs:
           pnpm test src/config/sessions/session-accessor.test.ts src/commands/daemon-install-helpers.test.ts
           pnpm test packages/memory-host-sdk/src/host/session-files.test.ts packages/memory-host-sdk/src/host/session-files-yield.test.ts
           pnpm test src/agents/embedded-agent-runner/run/attempt.llm-boundary.cache-stability.test.ts
+          pnpm test src/agents/embedded-agent-subscribe.handlers.tools.test.ts src/agents/embedded-agent-runner/run/payloads.test.ts
       - name: Pack the Linux desk profile
         run: |
           set -euo pipefail
