@@ -8,6 +8,7 @@ import { findTaskByRunId, resetTaskRegistryForTests } from "../../tasks/task-reg
 import { formatTaskStatusDetail } from "../../tasks/task-status.js";
 import { withEnvAsync } from "../../test-utils/env.js";
 import * as cronSchedule from "../schedule.js";
+import { appendCronRunLog } from "../run-log.js";
 import { setupCronServiceSuite, writeCronStoreSnapshot } from "../service.test-harness.js";
 import * as cronStoreModule from "../store.js";
 import { loadCronJobsStoreWithConfigJobs, loadCronStore } from "../store.js";
@@ -988,5 +989,35 @@ describe("cron service ops persist rollback", () => {
     expect(state.store?.jobs.find((job) => job.id === malformed.id)?.enabled).toBe(false);
     expect(enqueueSystemEvent).toHaveBeenCalledTimes(1);
     expect(requestHeartbeat).toHaveBeenCalledTimes(1);
+  });
+});
+
+it.each([false, true])("recovers a completed one-shot after a stale store write (delete=%s)", async (deleteAfterRun) => {
+  const { storePath } = await makeStorePath();
+  await withStateDirForStorePath(storePath, async () => {
+    const now = Date.parse("2026-08-01T09:00:00.000Z");
+    const job = {
+      ...createInterruptedMainJob(now),
+      schedule: { kind: "at" as const, at: new Date(now - 60_000).toISOString() },
+      deleteAfterRun,
+    };
+    await writeCronStoreSnapshot({ storePath, jobs: [job] });
+    await appendCronRunLog({
+      storePath,
+      entry: { jobId: job.id, ts: now - 100, action: "finished", status: "ok", runAtMs: job.state.runningAtMs },
+    });
+    const state = createOkIsolatedCronState({ storePath, now });
+    try {
+      await start(state);
+      const saved = (await loadCronStore(storePath)).jobs.find((entry) => entry.id === job.id);
+      if (deleteAfterRun) {
+        expect(saved).toBeUndefined();
+      } else {
+        expect(saved).toMatchObject({ enabled: false, state: { lastRunStatus: "ok", consecutiveErrors: 0 } });
+        expect(saved?.state.runningAtMs).toBeUndefined();
+      }
+    } finally {
+      stop(state);
+    }
   });
 });

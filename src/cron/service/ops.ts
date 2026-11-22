@@ -22,7 +22,7 @@ import {
 import { resolveCronDeliveryPlan, resolveFailureDestination } from "../delivery-plan.js";
 import { createCronRunDiagnosticsFromError } from "../run-diagnostics.js";
 import { createCronExecutionId } from "../run-id.js";
-import { normalizeCronRunLogJobId } from "../run-log.js";
+import { normalizeCronRunLogJobId, readCronRunLogEntriesPage } from "../run-log.js";
 import { cronSchedulingInputsEqual } from "../schedule-identity.js";
 import type { CronJob, CronJobCreate, CronJobPatch, CronPayload, CronStoreFile } from "../types.js";
 import { normalizeCronRunErrorText } from "./execution-errors.js";
@@ -243,9 +243,50 @@ export async function start(state: CronServiceState) {
       return;
     }
     const jobs = state.store?.jobs ?? [];
+    const completedOneShots = new Set<string>();
     for (const job of jobs) {
       job.state ??= {};
       if (typeof job.state.runningAtMs === "number") {
+        if (job.schedule.kind === "at") {
+          const { entries } = await readCronRunLogEntriesPage({
+            storePath: state.deps.storePath,
+            jobId: job.id,
+            limit: 1,
+          });
+          const latest = entries[0];
+          if (latest?.status === "ok" && latest.runAtMs === job.state.runningAtMs) {
+            // A completed run can reach the ledger before the updated job reaches disk.
+            job.enabled = false;
+            Object.assign(job.state, {
+              runningAtMs: undefined,
+              nextRunAtMs: undefined,
+              lastRunAtMs: latest.runAtMs,
+              lastRunStatus: latest.status,
+              lastStatus: latest.status,
+              lastDurationMs: latest.durationMs,
+              lastError: undefined,
+              lastErrorReason: undefined,
+              lastDiagnostics: undefined,
+              lastDiagnosticSummary: undefined,
+              consecutiveErrors: 0,
+              consecutiveSkipped: 0,
+              lastFailureAlertAtMs: undefined,
+              lastDelivered: latest.delivered,
+              lastDeliveryStatus: latest.deliveryStatus,
+              lastDeliveryError: latest.deliveryError,
+              lastFailureNotificationDelivered: latest.failureNotificationDelivery?.delivered,
+              lastFailureNotificationDeliveryStatus: latest.failureNotificationDelivery?.status,
+              lastFailureNotificationDeliveryError: latest.failureNotificationDelivery?.error,
+            });
+            job.updatedAtMs = latest.ts;
+            interruptedJobIds.add(job.id);
+            markedAnyInterruptedRun = true;
+            if (job.deleteAfterRun) {
+              completedOneShots.add(job.id);
+            }
+            continue;
+          }
+        }
         const nowMs = state.deps.nowMs();
         const interrupted = markInterruptedStartupRun({
           state,
@@ -257,6 +298,9 @@ export async function start(state: CronServiceState) {
         interruptedRuns.push(interrupted);
         markedAnyInterruptedRun = true;
       }
+    }
+    if (completedOneShots.size > 0 && state.store) {
+      state.store.jobs = jobs.filter((job) => !completedOneShots.has(job.id));
     }
     if (markedAnyInterruptedRun || jobs.length > 0) {
       await persist(state, markedAnyInterruptedRun ? undefined : { stateOnly: true });
