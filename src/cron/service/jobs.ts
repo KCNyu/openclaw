@@ -959,6 +959,11 @@ export function applyJobPatch(
   }
   if (typeof patch.deleteAfterRun === "boolean") {
     job.deleteAfterRun = patch.deleteAfterRun;
+  } else if (
+    job.schedule.kind === "at" &&
+    (patch.schedule?.kind === "every" || patch.schedule?.kind === "cron")
+  ) {
+    delete job.deleteAfterRun;
   }
   if (patch.schedule) {
     if (patch.schedule.kind === "cron") {

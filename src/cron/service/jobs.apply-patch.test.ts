@@ -241,3 +241,18 @@ describe("applyJobPatch delivery merge", () => {
     ).toBeNull();
   });
 });
+
+describe("applyJobPatch schedule retention", () => {
+  it.each([undefined, false, true])("preserves an explicit recurring cleanup policy: %s", (policy) => {
+    const job = makeJob({
+      schedule: { kind: "at", at: "2026-12-01T09:00:00.000Z" },
+      deleteAfterRun: true,
+    });
+    applyJobPatch(job, {
+      schedule: { kind: "every", everyMs: 60_000 },
+      ...(policy === undefined ? {} : { deleteAfterRun: policy }),
+    });
+    expect(Object.hasOwn(job, "deleteAfterRun")).toBe(policy !== undefined);
+    expect(job.deleteAfterRun).toBe(policy);
+  });
+});
