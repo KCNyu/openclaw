@@ -27,8 +27,8 @@ jobs:
       - name: Targeted tests
         run: |
           pnpm test src/cron/service/jobs.apply-patch.test.ts src/cron/service/ops.test.ts
-          pnpm test src/config/sessions/session-accessor.test.ts src/commands/daemon-install-path.test.ts
-          pnpm test packages/memory-host-sdk/src/host/session-files.provenance.test.ts
+          pnpm test src/config/sessions/session-accessor.test.ts src/commands/daemon-install-helpers.test.ts
+          pnpm test packages/memory-host-sdk/src/host/session-files.test.ts packages/memory-host-sdk/src/host/session-files-yield.test.ts
           pnpm test src/agents/embedded-agent-runner/run/attempt.llm-boundary.cache-stability.test.ts
       - name: Pack the Linux desk profile
         run: |
