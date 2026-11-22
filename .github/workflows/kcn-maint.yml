@@ -35,10 +35,22 @@ jobs:
         run: |
           set -euo pipefail
           export OPENCLAW_BUNDLED_PLUGIN_BUILD_IDS="$(node scripts/kcn-bundled-plugin-ids.mjs)"
+          # The correction tag retains base versions in Git. The official
+          # install pins both npm packages to the correction version.
+          node --input-type=commonjs <<'NODE'
+          const fs = require("node:fs");
+          for (const file of ["package.json", "packages/ai/package.json"]) {
+            const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
+            if (pkg.version !== "2026.7.1") throw new Error(`Unexpected base version: ${file}`);
+            pkg.version = "2026.7.1-2";
+            fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");
+          }
+          NODE
           mkdir -p "$RUNNER_TEMP/kcn-package"
           pnpm pack --pack-destination "$RUNNER_TEMP/kcn-package"
           cd "$RUNNER_TEMP/kcn-package"
-          tar -tzf openclaw-*.tgz > inventory.txt
+          test -f openclaw-2026.7.1-2.tgz
+          tar -tzf openclaw-2026.7.1-2.tgz > inventory.txt
           grep -qx 'package/dist/extensions/telegram/openclaw.plugin.json' inventory.txt
           grep -qx 'package/dist/extensions/memory-core/openclaw.plugin.json' inventory.txt
           if grep -E '^package/dist(-runtime)?/extensions/(discord|googlechat|imessage|matrix|mattermost|msteams|signal|slack|zalo)/' inventory.txt; then
@@ -52,7 +64,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/kcn-smoke"
           cd "$RUNNER_TEMP/kcn-smoke"
           npm install --no-audit --no-fund "$RUNNER_TEMP"/kcn-package/openclaw-*.tgz
-          ./node_modules/.bin/openclaw --version
+          ./node_modules/.bin/openclaw --version | grep -E "^OpenClaw 2026\.7\.1-2 "
           node --input-type=module -e 'for (const name of ["channel-message", "command-auth", "infra-runtime"]) await import("openclaw/plugin-sdk/" + name);'
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
