@@ -14,6 +14,7 @@ concurrency:
 
 jobs:
   linux:
+    if: github.repository == 'KCNyu/openclaw' && github.ref == 'refs/heads/kcn/7.1-maint'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
