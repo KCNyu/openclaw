@@ -1737,7 +1737,9 @@ export async function runEmbeddedAttempt(
       sessionKey: params.sessionKey,
       sessionId: params.sessionId,
     });
-    const uncompactedEffectiveTools = [...uncompactedToolSchemaProjection.tools];
+    const compareToolNames = (left: { name: string }, right: { name: string }) =>
+      left.name < right.name ? -1 : left.name > right.name ? 1 : 0;
+    const uncompactedEffectiveTools = uncompactedToolSchemaProjection.tools.toSorted(compareToolNames);
     let effectiveTools = uncompactedEffectiveTools;
     const catalogToolHookContext = {
       agentId: sessionAgentId,
@@ -1848,7 +1850,7 @@ export async function runEmbeddedAttempt(
       sessionKey: params.sessionKey,
       sessionId: params.sessionId,
     });
-    effectiveTools = [...toolSearchSchemaProjection.tools];
+    effectiveTools = toolSearchSchemaProjection.tools.toSorted(compareToolNames);
     if (toolSearch.compacted && !toolSearch.catalogReused) {
       prepStages.mark(codeModeControlsEnabledForRun ? "code-mode" : "tool-search");
       log.info(
