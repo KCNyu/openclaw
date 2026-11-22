@@ -2472,7 +2472,8 @@ export async function trimSessionTranscriptForManualCompact(
   const maxLines = Math.max(1, Math.floor(params.maxLines));
   let headerLine: string | undefined;
   const tailLines: string[] = [];
-  const maxTailLines = Math.max(0, maxLines - 1);
+  const maxTailLines = maxLines - 1;
+  let nextTail = 0;
   let totalLines = 0;
   try {
     for await (const line of streamSessionTranscriptLines(transcript.sessionFile)) {
@@ -2481,9 +2482,9 @@ export async function trimSessionTranscriptForManualCompact(
         headerLine = line;
         continue;
       }
-      tailLines.push(line);
-      if (tailLines.length > maxTailLines) {
-        tailLines.shift();
+      if (maxTailLines > 0) {
+        tailLines[nextTail] = line;
+        nextTail = (nextTail + 1) % maxTailLines;
       }
     }
   } catch {
@@ -2493,7 +2494,10 @@ export async function trimSessionTranscriptForManualCompact(
     return { compacted: false, kept: totalLines };
   }
 
-  const lines = normalizeManualCompactTranscriptLines(headerLine, tailLines);
+  const lines = normalizeManualCompactTranscriptLines(headerLine, [
+    ...tailLines.slice(nextTail),
+    ...tailLines.slice(0, nextTail),
+  ]);
   if (!lines) {
     return { compacted: false, kept: 0 };
   }
