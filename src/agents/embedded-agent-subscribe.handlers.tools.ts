@@ -1371,7 +1371,10 @@ export async function handleToolExecutionEnd(
       ) {
         ctx.state.lastToolError = undefined;
       }
-    } else {
+    } else if (
+      !ctx.state.lastToolError.middlewareError ||
+      ctx.state.lastToolError.toolName === toolName
+    ) {
       ctx.state.lastToolError = undefined;
     }
   }

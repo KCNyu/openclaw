@@ -937,7 +937,7 @@ describe("handleToolExecutionEnd sessions_spawn terminal success tracking", () =
 });
 
 describe("handleToolExecutionEnd mutating failure recovery", () => {
-  it("marks middleware failures on the last tool error", async () => {
+  it("preserves middleware failure across an unrelated tool success", async () => {
     const { ctx } = createTestContext();
 
     await handleToolExecutionStart(
@@ -969,6 +969,17 @@ describe("handleToolExecutionEnd mutating failure recovery", () => {
             middlewareError: true,
           },
         },
+      } as never,
+    );
+
+    await handleToolExecutionEnd(
+      ctx as never,
+      {
+        type: "tool_execution_end",
+        toolName: "read",
+        toolCallId: "tool-read-sibling",
+        isError: false,
+        result: { content: [{ type: "text", text: "file contents" }] },
       } as never,
     );
 
