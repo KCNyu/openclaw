@@ -6,8 +6,10 @@ const { fileState } = vi.hoisted(() => ({
 }));
 
 vi.mock("./fs-utils.js", () => ({
-  readRegularFile: vi.fn(async () => ({
-    buffer: Buffer.from(fileState.raw, "utf-8"),
+  openLocalFileSafely: vi.fn(async () => ({
+    handle: { createReadStream: () => [fileState.raw] },
+    stat: { size: Buffer.byteLength(fileState.raw, "utf-8") },
+    [Symbol.asyncDispose]: async () => {},
   })),
   statRegularFile: vi.fn(async () => ({
     missing: false,
