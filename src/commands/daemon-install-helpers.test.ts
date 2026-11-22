@@ -282,7 +282,10 @@ describe("buildGatewayInstallPlan", () => {
 
     expect(plan.programArguments).toEqual(["node", "gateway"]);
     expect(plan.workingDirectory).toBe("/Users/me");
-    expect(plan.environment).toEqual({ OPENCLAW_PORT: "3000" });
+    expect(plan.environment).toEqual({
+      OPENCLAW_PORT: "3000",
+      ...(process.platform === "linux" ? { MALLOC_ARENA_MAX: "2" } : {}),
+    });
     expect(mocks.resolvePreferredNodePath).not.toHaveBeenCalled();
     expect(mocks.buildServiceEnvironment).toHaveBeenCalledOnce();
     const serviceEnvRequest = firstMockArg(
@@ -292,6 +295,19 @@ describe("buildGatewayInstallPlan", () => {
     expect(serviceEnvRequest?.env).toStrictEqual({ HOME: isolatedHome });
     expect(serviceEnvRequest?.port).toBe(3000);
     expect(serviceEnvRequest?.extraPathDirs).toStrictEqual(["/custom"]);
+  });
+
+  it("preserves an explicit Linux allocator override across service regeneration", async () => {
+    mockNodeGatewayPlanFixture();
+    const plan = await buildGatewayInstallPlan({
+      env: { HOME: isolatedHome, MALLOC_ARENA_MAX: "4" },
+      port: 3000,
+      runtime: "node",
+      nodePath: "/custom/node",
+      platform: "linux",
+      existingEnvironment: { MALLOC_ARENA_MAX: "6" },
+    });
+    expect(plan.environment.MALLOC_ARENA_MAX).toBe("4");
   });
 
   it("adds the active openclaw command bin directory to the managed service PATH", async () => {
