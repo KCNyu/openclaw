@@ -127,13 +127,22 @@ describe("CronService failure alerts", () => {
     await cron.run(job.id, "force");
     expect(sendCronFailureAlert).not.toHaveBeenCalled();
 
+    const runAtMs = Date.now();
+    runIsolatedAgentJob.mockImplementationOnce(async () => {
+      vi.advanceTimersByTime(5_000);
+      return { status: "error", error: "wrong model id" };
+    });
     await cron.run(job.id, "force");
     expect(sendCronFailureAlert).toHaveBeenCalledTimes(1);
     const firstAlert = expectAlertFields(sendCronFailureAlert, {
       channel: "telegram",
       to: "19098680",
+      runAtMs,
     });
-    expect((firstAlert.job as { id?: string } | undefined)?.id).toBe(job.id);
+    expect(firstAlert.job).toMatchObject({
+      id: job.id,
+      state: { lastFailureAlertAtMs: runAtMs + 5_000 },
+    });
     expectAlertTextContaining(sendCronFailureAlert, 'Cron job "daily report" failed 2 times');
 
     await cron.run(job.id, "force");
@@ -282,10 +291,12 @@ describe("CronService failure alerts", () => {
     expect(updatedFailureAlert.to).toBe("12345");
     expect(updatedFailureAlert.includeSkipped).toBe(true);
 
+    const runAtMs = Date.now();
     await cron.run(job.id, "force");
     expectAlertFields(sendCronFailureAlert, {
       channel: "telegram",
       to: "12345",
+      runAtMs,
     });
     expectAlertTextContaining(
       sendCronFailureAlert,

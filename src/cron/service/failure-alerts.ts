@@ -103,6 +103,7 @@ function emitFailureAlert(
   state: CronServiceState,
   params: {
     job: CronJob;
+    runAtMs: number;
     error?: string;
     consecutiveErrors: number;
     channel: CronMessageChannel;
@@ -134,6 +135,7 @@ function emitFailureAlert(
       .sendCronFailureAlert({
         job: params.job,
         text,
+        runAtMs: params.runAtMs,
         channel: params.channel,
         to: params.to,
         mode: params.mode,
@@ -163,6 +165,7 @@ export function maybeEmitFailureAlert(
   state: CronServiceState,
   params: {
     job: CronJob;
+    runAtMs: number;
     alertConfig: ResolvedFailureAlert | null;
     status: "error" | "skipped";
     error?: string;
@@ -188,6 +191,7 @@ export function maybeEmitFailureAlert(
   }
   emitFailureAlert(state, {
     job: params.job,
+    runAtMs: params.runAtMs,
     error: params.error,
     consecutiveErrors: params.consecutiveCount,
     channel: params.alertConfig.channel,

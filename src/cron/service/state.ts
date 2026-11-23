@@ -183,6 +183,7 @@ export type CronServiceDeps = {
   sendCronFailureAlert?: (params: {
     job: CronJob;
     text: string;
+    runAtMs: number;
     channel: CronMessageChannel;
     to?: string;
     mode?: "announce" | "webhook";

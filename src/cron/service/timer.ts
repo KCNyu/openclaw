@@ -776,6 +776,7 @@ export function applyJobResult(
       status: "error",
       error: result.error,
       provider: result.provider,
+      runAtMs: result.startedAt,
       consecutiveCount: job.state.consecutiveErrors,
     });
   } else if (result.status === "skipped") {
@@ -788,6 +789,7 @@ export function applyJobResult(
         status: "skipped",
         error: result.error,
         provider: result.provider,
+        runAtMs: result.startedAt,
         consecutiveCount: job.state.consecutiveSkipped,
       });
     } else {

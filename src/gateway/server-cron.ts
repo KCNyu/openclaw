@@ -657,7 +657,7 @@ export function buildGatewayCronService(params: {
         "cron: isolated agent setup timed out before runner start; backing off job without gateway restart",
       );
     },
-    sendCronFailureAlert: async ({ job, text, channel, to, mode, accountId }) =>
+    sendCronFailureAlert: async ({ job, text, runAtMs, channel, to, mode, accountId }) =>
       await sendGatewayCronFailureAlert({
         deps: params.deps,
         logger: cronLogger,
@@ -665,6 +665,7 @@ export function buildGatewayCronService(params: {
         webhookToken: params.cfg.cron?.webhookToken,
         job,
         text,
+        runAtMs,
         channel,
         to,
         mode,
