@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TranscriptNotContinuableError } from "../../packages/agent-core/src/errors.js";
+import type { ThinkingCatalogEntry } from "../auto-reply/thinking.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { resetLogger, setLoggerOverride } from "../logging/logger.js";
 import { createWarnLogCapture } from "../logging/test-helpers/warn-log-capture.js";
@@ -24,6 +25,7 @@ import type { EmbeddedAgentRunResult } from "./embedded-agent-runner/types.js";
 import { FailoverError } from "./failover-error.js";
 import { resetFallbackSkipCacheForTest } from "./fallback-skip-cache.js";
 import { MissingAgentHarnessError } from "./harness/errors.js";
+import { resolveConfiguredModelThinking } from "./model-thinking-default.js";
 import { clearAgentHarnesses, registerAgentHarness } from "./harness/registry.js";
 import type { AgentHarness } from "./harness/types.js";
 import { LiveSessionModelSwitchError } from "./live-model-switch-error.js";
@@ -40,6 +42,7 @@ import {
 } from "./run-termination.js";
 import { SessionWriteLockTimeoutError } from "./session-write-lock-error.js";
 import { makeModelFallbackCfg } from "./test-helpers/model-fallback-config-fixture.js";
+import { resolveCandidateThinkingLevel } from "./thinking-runtime.js";
 
 type ProviderModelNormalizationParams = { provider: string; context: { modelId: string } };
 
@@ -561,6 +564,56 @@ const INSUFFICIENT_QUOTA_PAYLOAD =
   '{"type":"error","error":{"type":"insufficient_quota","message":"Your account has insufficient quota balance to run this request."}}';
 
 describe("runWithModelFallback", () => {
+  it("falls through both MiniMax attempts to Luna with its own thinking level", async () => {
+    const flash = "MiniMax-M3.1-Flash";
+    const luna = "gpt-6-luna";
+    const cfg = makeCfg({
+      agents: {
+        defaults: {
+          model: { primary: `minimax/${flash}`, fallbacks: [`minimax-2/${flash}`, `openai/${luna}`] },
+          models: {
+            [`minimax/${flash}`]: { params: { thinking: "adaptive" } },
+            [`minimax-2/${flash}`]: { params: { thinking: "adaptive" } },
+            [`openai/${luna}`]: { params: { thinking: "max" } },
+          },
+        },
+      },
+    });
+    const flashCompat = { supportedReasoningEfforts: ["adaptive"] };
+    const catalog: ThinkingCatalogEntry[] = [
+      { provider: "minimax", id: flash, api: "anthropic-messages", compat: flashCompat },
+      { provider: "minimax-2", id: flash, api: "anthropic-messages", compat: flashCompat },
+      { provider: "openai", id: luna, reasoning: true },
+    ];
+    const hops: Array<{ provider: string; level: string | undefined }> = [];
+    const result = await runWithModelFallback({
+      cfg,
+      provider: "minimax",
+      model: flash,
+      run: async (provider, model) => {
+        const level = resolveCandidateThinkingLevel({
+          cfg,
+          provider,
+          modelId: model,
+          level: resolveConfiguredModelThinking(cfg, provider, model) ?? "high",
+          catalog,
+          agentRuntime: provider === "openai" ? "codex" : "openclaw",
+        });
+        hops.push({ provider, level });
+        if (provider !== "openai") {
+          throw new FailoverError("provider unavailable", { provider, model, reason: "timeout" });
+        }
+        return "ok";
+      },
+    });
+    expect(result).toMatchObject({ result: "ok", provider: "openai", model: luna });
+    expect(hops).toEqual([
+      { provider: "minimax", level: "adaptive" },
+      { provider: "minimax-2", level: "adaptive" },
+      { provider: "openai", level: "max" },
+    ]);
+  });
+
   it("uses the opt-in auth skip cache on the second turn for the same session", async () => {
     const previous = process.env.OPENCLAW_FALLBACK_SKIP_TTL_MS;
     process.env.OPENCLAW_FALLBACK_SKIP_TTL_MS = "60000";
