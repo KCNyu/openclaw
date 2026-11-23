@@ -464,17 +464,15 @@ describe("exec notifyOnExit suppression", () => {
     expect(requestHeartbeatMock).not.toHaveBeenCalled();
   });
 
-  it("notifies for manual-cancelled background execs with output", async () => {
-    await runBackgroundedExit({ reason: "manual-cancel", stdout: "partial output\n" });
+  it("keeps manual-cancelled background exec output available without notifying", async () => {
+    const { processId } = await runBackgroundedExit({
+      reason: "manual-cancel",
+      stdout: "partial output\n",
+    });
 
-    const [message, options] = requireSystemEventCall();
-    expect(message).toContain("partial output");
-    expect(options.sessionKey).toBe("agent:main:main");
-    expect(requestHeartbeatMock).toHaveBeenCalledTimes(1);
-    const heartbeat = requireHeartbeatCall();
-    expect(heartbeat.coalesceMs).toBe(0);
-    expect(heartbeat.reason).toBe("exec-event");
-    expect(heartbeat.sessionKey).toBe("agent:main:main");
+    expect(enqueueSystemEventMock).not.toHaveBeenCalled();
+    expect(requestHeartbeatMock).not.toHaveBeenCalled();
+    expect(getFinishedSession(processId)?.aggregated).toContain("partial output");
   });
 
   it("still notifies for no-output background exec timeouts", async () => {
@@ -497,7 +495,7 @@ describe("exec notifyOnExit suppression", () => {
     // raw slice(0, 179) would keep the dangling half.
     const head = "a".repeat(178);
     const overflowingOutput = `${head}🎉${"b".repeat(30)}`;
-    await runBackgroundedExit({ reason: "manual-cancel", stdout: overflowingOutput });
+    await runBackgroundedExit({ reason: "overall-timeout", stdout: overflowingOutput });
 
     const [message] = requireSystemEventCall();
     const loneSurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u;
@@ -514,7 +512,7 @@ describe("exec notifyOnExit suppression", () => {
     const prefix = "a".repeat(101);
     const tailHead = "b".repeat(179);
     const overflowingOutput = `${prefix}🎉${tailHead}${"c".repeat(220)}`;
-    await runBackgroundedExit({ reason: "manual-cancel", stdout: overflowingOutput });
+    await runBackgroundedExit({ reason: "overall-timeout", stdout: overflowingOutput });
 
     const [message] = requireSystemEventCall();
     const loneSurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u;

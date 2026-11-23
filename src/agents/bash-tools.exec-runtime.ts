@@ -327,15 +327,16 @@ function maybeNotifyOnExit(session: ProcessSession, status: "completed" | "faile
   if (isCronRunSessionKey(sessionKey)) {
     return;
   }
+  // Requested stops must not wake another turn to relay leftover output.
+  if (session.exitReason === "manual-cancel") {
+    return;
+  }
   const exitLabel = session.exitSignal
     ? `signal ${session.exitSignal}`
     : `code ${session.exitCode ?? 0}`;
   const output = compactNotifyOutput(
     tail(session.tail || session.aggregated || "", DEFAULT_NOTIFY_TAIL_CHARS),
   );
-  if (status === "failed" && session.exitReason === "manual-cancel" && !output) {
-    return;
-  }
   if (status === "completed" && !output && session.notifyOnExitEmptySuccess !== true) {
     return;
   }
