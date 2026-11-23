@@ -5,6 +5,7 @@ import { retireSessionMcpRuntime } from "../../agents/agent-bundle-mcp-tools.js"
 import { hasAnyAuthProfileStoreSource } from "../../agents/auth-profiles/source-check.js";
 import { findModelInCatalog } from "../../agents/model-catalog-lookup.js";
 import type { ModelCatalogEntry } from "../../agents/model-catalog.types.js";
+import { resolveConfiguredModelThinking } from "../../agents/model-thinking-default.js";
 import { listOpenAIAuthProfileProvidersForAgentRuntime } from "../../agents/openai-routing.js";
 import { createAgentRunRestartAbortError } from "../../agents/run-termination.js";
 import { expandToolGroups, normalizeToolName } from "../../agents/tool-policy.js";
@@ -800,11 +801,13 @@ async function prepareCronRunContext(params: {
     });
   }
   const thinkingCatalog = await loadCatalog();
+  const initialThinkLevel =
+    resolveConfiguredModelThinking(cfgWithAgentDefaults, provider, model) ?? requestedThinkLevel;
   if (
     !isThinkingLevelSupported({
       provider,
       model,
-      level: requestedThinkLevel,
+      level: initialThinkLevel,
       catalog: thinkingCatalog,
       agentRuntime: effectiveAgentRuntime,
     })
@@ -812,13 +815,13 @@ async function prepareCronRunContext(params: {
     const fallbackThinkLevel = resolveSupportedThinkingLevel({
       provider,
       model,
-      level: requestedThinkLevel,
+      level: initialThinkLevel,
       catalog: thinkingCatalog,
       agentRuntime: effectiveAgentRuntime,
     });
-    if (fallbackThinkLevel !== requestedThinkLevel) {
+    if (fallbackThinkLevel !== initialThinkLevel) {
       logWarn(
-        `[cron:${input.job.id}] Thinking level "${requestedThinkLevel}" is not supported for ${provider}/${model}; using "${fallbackThinkLevel}" for this candidate.`,
+        `[cron:${input.job.id}] Thinking level "${initialThinkLevel}" is not supported for ${provider}/${model}; using "${fallbackThinkLevel}" for this candidate.`,
       );
     }
   }

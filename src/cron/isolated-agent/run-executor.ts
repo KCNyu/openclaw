@@ -5,6 +5,7 @@ import type { BootstrapContextMode } from "../../agents/bootstrap-files.js";
 import type { FastModeAutoProgressState } from "../../agents/fast-mode.js";
 import { runAgentHarnessBeforeMessageWriteHook } from "../../agents/harness/hook-helpers.js";
 import type { ModelCatalogEntry } from "../../agents/model-catalog.types.js";
+import { resolveConfiguredModelThinking } from "../../agents/model-thinking-default.js";
 import { resolveCliRuntimeExecutionProvider } from "../../agents/model-runtime-aliases.js";
 import { wrapUntrustedPromptDataBlock } from "../../agents/sanitize-for-prompt.js";
 import { resolveSessionRuntimeOverrideForProvider } from "../../agents/session-runtime-compat.js";
@@ -369,7 +370,12 @@ export function createCronPromptExecutor(params: {
           cfg: params.cfgWithAgentDefaults,
           provider: providerOverride,
           modelId: modelOverride,
-          level: params.thinkLevel,
+          level:
+            resolveConfiguredModelThinking(
+              params.cfgWithAgentDefaults,
+              providerOverride,
+              modelOverride,
+            ) ?? params.thinkLevel,
           catalog: params.thinkingCatalog,
           agentId: params.agentId,
           sessionKey: params.runSessionKey,

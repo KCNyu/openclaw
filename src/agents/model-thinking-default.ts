@@ -8,12 +8,31 @@ import {
   normalizeOptionalLowercaseString,
 } from "@openclaw/normalization-core/string-coerce";
 import { resolveThinkingDefaultForModel } from "../auto-reply/thinking.js";
-import type { ThinkLevel } from "../auto-reply/thinking.shared.js";
+import { normalizeThinkLevel, type ThinkLevel } from "../auto-reply/thinking.shared.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { ModelCatalogEntry } from "./model-catalog.types.js";
 import { legacyModelKey, modelKey, normalizeProviderId } from "./model-selection-normalize.js";
 import { normalizeModelSelection } from "./model-selection-resolve.js";
 import { buildConfiguredModelCatalog } from "./model-selection-shared.js";
+
+/** Reads the explicit model preference without applying any global defaults. */
+export function resolveConfiguredModelThinking(
+  cfg: OpenClawConfig,
+  provider: string,
+  model: string,
+): ThinkLevel | undefined {
+  const models = cfg.agents?.defaults?.models;
+  const canonicalKey = modelKey(provider, model);
+  const legacyKey = legacyModelKey(provider, model);
+  const thinking =
+    models?.[canonicalKey]?.params?.thinking ??
+    (legacyKey ? models?.[legacyKey]?.params?.thinking : undefined);
+  if (thinking === false || thinking === "disabled" || thinking === "none") {
+    return "off";
+  }
+  const normalized = typeof thinking === "string" ? normalizeThinkLevel(thinking) : undefined;
+  return normalized === thinking ? normalized : undefined;
+}
 
 /** Resolves the default thinking level for a provider/model pair. */
 export function resolveThinkingDefault(params: {
@@ -44,28 +63,8 @@ export function resolveThinkingDefault(params: {
     normalizedPrimarySelection === normalizedCanonicalKey ||
     Boolean(normalizedLegacyKey && normalizedPrimarySelection === normalizedLegacyKey) ||
     normalizedPrimarySelection === normalizeLowercaseStringOrEmpty(params.model);
-  const perModelThinking =
-    configuredModels?.[canonicalKey]?.params?.thinking ??
-    (legacyKey ? configuredModels?.[legacyKey]?.params?.thinking : undefined);
-  // Accept boolean false and common disable aliases as "off".
-  if (
-    perModelThinking === false ||
-    perModelThinking === "disabled" ||
-    perModelThinking === "none"
-  ) {
-    return "off";
-  }
-  if (
-    perModelThinking === "off" ||
-    perModelThinking === "minimal" ||
-    perModelThinking === "low" ||
-    perModelThinking === "medium" ||
-    perModelThinking === "high" ||
-    perModelThinking === "xhigh" ||
-    perModelThinking === "adaptive" ||
-    perModelThinking === "max" ||
-    perModelThinking === "ultra"
-  ) {
+  const perModelThinking = resolveConfiguredModelThinking(params.cfg, params.provider, params.model);
+  if (perModelThinking) {
     return perModelThinking;
   }
   const configured = params.cfg.agents?.defaults?.thinkingDefault;

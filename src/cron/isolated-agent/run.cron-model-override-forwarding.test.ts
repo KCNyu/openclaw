@@ -554,6 +554,59 @@ describe("runCronIsolatedAgentTurn — cron model override forwarding (#58065)",
     },
   );
 
+  it("uses per-model thinking before clamping each brief fallback", async () => {
+    const flash = "MiniMax-M3.1-Flash";
+    const luna = "gpt-6-luna";
+    const attempts = [
+      { provider: "minimax", model: flash, level: "adaptive" },
+      { provider: "minimax-2", model: flash, level: "adaptive" },
+      { provider: "openai", model: luna, level: "max" },
+    ];
+    resolveAllowedModelRefMock.mockReturnValue({ ref: { provider: "minimax", model: flash } });
+    runWithModelFallbackMock.mockImplementation(async ({ run }) => {
+      let result;
+      for (const attempt of attempts) {
+        try {
+          result = await run(attempt.provider, attempt.model);
+          return { result, provider: attempt.provider, model: attempt.model, attempts: [] };
+        } catch (error) {
+          if (!(error instanceof Error) || error.message !== "provider unavailable") {
+            throw error;
+          }
+        }
+      }
+      throw new Error("the Luna fallback never ran");
+    });
+    runEmbeddedAgentMock
+      .mockRejectedValueOnce(new Error("provider unavailable"))
+      .mockRejectedValueOnce(new Error("provider unavailable"))
+      .mockResolvedValueOnce(makeSuccessfulRunResult("openai", luna).result);
+
+    const result = await runCronIsolatedAgentTurn(
+      makeParams({
+        cfg: {
+          agents: {
+            defaults: {
+              models: {
+                [`minimax/${flash}`]: { params: { thinking: "adaptive" } },
+                [`minimax-2/${flash}`]: { params: { thinking: "adaptive" } },
+                [`openai/${luna}`]: { params: { thinking: "max" } },
+              },
+            },
+          },
+        },
+        job: makeJob({
+          payload: { kind: "agentTurn", message: "summarize", model: `minimax/${flash}`, thinking: "high" },
+        }),
+      }),
+    );
+
+    expect(result.status).toBe("ok");
+    expect(runEmbeddedAgentMock.mock.calls.map(([run]) => run.thinkLevel)).toEqual(
+      attempts.map(({ level }) => level),
+    );
+  });
+
   it("revalidates thinking for each model fallback without persisting the remap", async () => {
     resolveAllowedModelRefMock.mockReturnValue({
       ref: { provider: "openai", model: "gpt-5.6-sol" },
