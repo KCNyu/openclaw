@@ -1345,7 +1345,9 @@ export async function handleToolExecutionEnd(
   ctx.state.toolMetaById.delete(toolCallId);
   ctx.state.toolSummaryById.delete(toolCallId);
   const weixinFailureNotice =
-    ctx.params.trackWeixinToolFailures && !approvalUnavailable && toolName !== "sessions_send"
+    ctx.params.trackWeixinToolFailures &&
+    !approvalUnavailable &&
+    (!isToolError || toolName !== "sessions_send")
       ? recordWeixinToolResult({
           session: ctx.params.sessionId ?? ctx.params.sessionKey ?? runId,
           runId,

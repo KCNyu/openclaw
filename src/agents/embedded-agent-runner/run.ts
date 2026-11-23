@@ -3736,6 +3736,8 @@ async function runEmbeddedAgentInternal(
             toolTrustedLocalMedia: attempt.toolTrustedLocalMedia,
             sourceReplyDeliveryMode: params.sourceReplyDeliveryMode,
           });
+          const isVisibleToolWarning = (payload: ReplyPayload) =>
+            getReplyPayloadMetadata(payload)?.quietToolErrorWarning !== true;
           const timedOutDuringPrompt =
             timedOut && !timedOutDuringCompaction && !timedOutDuringToolExecution;
           const finalAssistantStopReason = (attemptAssistant?.stopReason ?? "")
@@ -3822,7 +3824,9 @@ async function runEmbeddedAgentInternal(
             });
             return {
               payloads: [
-                ...(hasPartialAssistantTextAfterPromptTimeout ? [] : payloadsWithToolMedia || []),
+                ...(hasPartialAssistantTextAfterPromptTimeout
+                  ? []
+                  : (payloadsWithToolMedia?.filter(isVisibleToolWarning) ?? [])),
                 {
                   text: timeoutText,
                   isError: true,
@@ -4219,9 +4223,7 @@ async function runEmbeddedAgentInternal(
           const terminalCandidates = emptyAssistantReplyIsSilent
             ? [{ text: SILENT_REPLY_TOKEN }]
             : payloadsForTerminalPath;
-          const terminalPayloads = terminalCandidates?.filter(
-            (payload) => getReplyPayloadMetadata(payload)?.quietToolErrorWarning !== true,
-          );
+          const terminalPayloads = terminalCandidates?.filter(isVisibleToolWarning);
           const quietToolFailure = terminalCandidates?.length !== terminalPayloads?.length;
           setTerminalLifecycleMeta({
             replayInvalid,

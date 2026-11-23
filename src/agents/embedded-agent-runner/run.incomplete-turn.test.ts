@@ -1,6 +1,5 @@
 // Coverage for incomplete-turn safety, retry instructions, and liveness states.
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { setReplyPayloadMetadata } from "../../auto-reply/reply-payload.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import {
   hasCommittedMessagingToolDeliveryEvidence,
@@ -89,6 +88,8 @@ describe("runEmbeddedAgent incomplete-turn safety", () => {
   it.each([false, true])(
     "drops quiet tool warnings at the terminal boundary with an answer present: %s",
     async (hasAnswer) => {
+      // The harness resets modules while loading the runner, including the payload metadata store.
+      const { setReplyPayloadMetadata } = await import("../../auto-reply/reply-payload.js");
       const answer = "正常回复";
       mockedRunEmbeddedAttempt.mockResolvedValueOnce(
         makeAttemptResult({
