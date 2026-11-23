@@ -538,7 +538,7 @@ describe("buildEmbeddedRunPayloads tool-error warnings", () => {
     });
 
     expect(payloads).toEqual([
-      { text: "正常回复" },
+      { text: "正常回复", replyToTag: false },
       { text: "⚠️ 工具已连续失败 3 次。", isError: true },
     ]);
   });
