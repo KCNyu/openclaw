@@ -4,7 +4,7 @@ import { getReplyPayloadMetadata, setReplyPayloadMetadata } from "../reply-paylo
 import { appendUsageLine } from "./agent-runner-usage-line.js";
 
 describe("appendUsageLine", () => {
-  const footer = "deepseek-flash  [█░░░░░░░░░] 10%\n↑0.0131$  Σ0.096$  @98.2%";
+  const footer = "\n```text\ndeepseek-flash  [█░░░░░░░░░] 10%\n↑0.0131$  Σ0.096$  @98.2%\n```";
 
   it.each(["```text", "  ````text", "~~~text"])(
     "closes an open %s fence before the footer",
@@ -17,21 +17,30 @@ describe("appendUsageLine", () => {
     },
   );
 
-  it("leaves closed fences alone and unwraps the usage template's own text fence", () => {
-    const text = "Result\n```text\nexample\n```";
-    const template = "\n```text\n\n" + footer + "\n\n```\n";
-    expect(appendUsageLine([{ text }], template)).toEqual([{ text: `${text}\n${footer}` }]);
+  it.each(["Answer", "Result\n```text\nexample\n```"])(
+    "preserves the template's two-line text block after %j",
+    (text) => {
+      expect(appendUsageLine([{ text }], footer)).toEqual([{ text: `${text}\n${footer}` }]);
+    },
+  );
+
+  it("preserves the template's text block in a standalone footer", () => {
+    expect(appendUsageLine([], footer)).toEqual([{ text: footer, isStatusNotice: true }]);
   });
 
-  it("keeps the footer on the answer when warnings and progress follow it", () => {
+  it("skips errors, reasoning, commentary and status notices when placing the footer", () => {
     const warning = { text: "⚠️ 工具已连续失败 3 次。", isError: true };
     const progress = { text: "Compacting…", isStatusNotice: true };
-    expect(appendUsageLine([{ text: "Answer" }, warning, progress], footer)).toEqual([
+    const reasoning = { text: "Reasoning", isReasoning: true };
+    const commentary = { text: "Commentary", isCommentary: true };
+    const notices = [warning, progress, reasoning, commentary];
+    expect(appendUsageLine([{ text: "Answer" }, ...notices], footer)).toEqual([
       { text: `Answer\n${footer}` },
-      warning,
-      progress,
+      ...notices,
     ]);
-    expect(appendUsageLine([warning, progress], footer)).toEqual([warning, progress]);
+    for (const notice of notices) {
+      expect(appendUsageLine([notice], footer)).toEqual([notice]);
+    }
   });
 
   it("preserves reply payload metadata when appending usage text", () => {

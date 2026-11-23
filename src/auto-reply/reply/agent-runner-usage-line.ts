@@ -116,18 +116,6 @@ export const resolveResponseUsageLine = (params: {
 };
 
 export const appendUsageLine = (payloads: ReplyPayload[], line: string): ReplyPayload[] => {
-  // Some usage templates wrap the entire footer in a text fence.
-  const trimmedLine = line.trim();
-  const footerFences = scanFenceSpans(trimmedLine);
-  const [wrapper] = footerFences.spans;
-  const footer =
-    footerFences.spans.length === 1 &&
-    !footerFences.state.open &&
-    wrapper?.start === 0 &&
-    wrapper.end === trimmedLine.length
-      ? trimmedLine.split("\n").slice(1, -1).join("\n").trim()
-      : line;
-
   const acceptsFooter = (payload: ReplyPayload) =>
     !payload.isError &&
     !payload.isReasoning &&
@@ -136,7 +124,7 @@ export const appendUsageLine = (payloads: ReplyPayload[], line: string): ReplyPa
   const index = payloads.findLastIndex((payload) => payload.text && acceptsFooter(payload));
   if (index === -1) {
     return payloads.length === 0 || payloads.some(acceptsFooter)
-      ? [...payloads, { text: footer, isStatusNotice: true }]
+      ? [...payloads, { text: line, isStatusNotice: true }]
       : payloads;
   }
   const existing = payloads[index];
@@ -146,7 +134,7 @@ export const appendUsageLine = (payloads: ReplyPayload[], line: string): ReplyPa
   const closeFence = open ? `${open.indent}${open.marker}\n` : "";
   const next = {
     ...existing,
-    text: `${existingText}${separator}${closeFence}${footer}`,
+    text: `${existingText}${separator}${closeFence}${line}`,
   };
   const metadata = getReplyPayloadMetadata(existing);
   // Transcript mirrors must track the mutated text or source-reply delivery drifts.
