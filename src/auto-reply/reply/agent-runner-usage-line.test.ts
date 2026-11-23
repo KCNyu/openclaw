@@ -4,6 +4,36 @@ import { getReplyPayloadMetadata, setReplyPayloadMetadata } from "../reply-paylo
 import { appendUsageLine } from "./agent-runner-usage-line.js";
 
 describe("appendUsageLine", () => {
+  const footer = "deepseek-flash  [█░░░░░░░░░] 10%\n↑0.0131$  Σ0.096$  @98.2%";
+
+  it.each(["```text", "  ````text", "~~~text"])(
+    "closes an open %s fence before the footer",
+    (open) => {
+      const text = `Result\n${open}\nexample`;
+      const close = open.replace(/text$/, "");
+      expect(appendUsageLine([{ text }], footer)).toEqual([
+        { text: `${text}\n${close}\n${footer}` },
+      ]);
+    },
+  );
+
+  it("leaves closed fences alone and unwraps the usage template's own text fence", () => {
+    const text = "Result\n```text\nexample\n```";
+    const template = "\n```text\n\n" + footer + "\n\n```\n";
+    expect(appendUsageLine([{ text }], template)).toEqual([{ text: `${text}\n${footer}` }]);
+  });
+
+  it("keeps the footer on the answer when warnings and progress follow it", () => {
+    const warning = { text: "⚠️ 工具已连续失败 3 次。", isError: true };
+    const progress = { text: "Compacting…", isStatusNotice: true };
+    expect(appendUsageLine([{ text: "Answer" }, warning, progress], footer)).toEqual([
+      { text: `Answer\n${footer}` },
+      warning,
+      progress,
+    ]);
+    expect(appendUsageLine([warning, progress], footer)).toEqual([warning, progress]);
+  });
+
   it("preserves reply payload metadata when appending usage text", () => {
     const payload = setReplyPayloadMetadata(
       { text: "message tool reply" },

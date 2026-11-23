@@ -32,7 +32,9 @@ export function mergeAttemptToolMediaPayloads(params: {
   }
 
   const payloads = params.payloads?.length ? [...params.payloads] : [];
-  const payloadIndex = payloads.findIndex((payload) => !payload.isReasoning);
+  const payloadIndex = payloads.findIndex(
+    (payload) => !payload.isReasoning && !getReplyPayloadMetadata(payload)?.quietToolErrorWarning,
+  );
   if (payloadIndex >= 0) {
     const payload = payloads[payloadIndex];
     if (

@@ -5,6 +5,7 @@
  */
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
 import type { FileTarget } from "./tool-mutation.js";
+import type { WeixinToolFailureNotice } from "./weixin-tool-failure-streak.js";
 
 export type ToolErrorSummary = {
   toolName: string;
@@ -17,6 +18,7 @@ export type ToolErrorSummary = {
   mutatingAction?: boolean;
   actionFingerprint?: string;
   fileTarget?: FileTarget;
+  weixinFailureNotice?: WeixinToolFailureNotice;
 };
 
 const EXEC_LIKE_TOOL_NAMES = new Set(["exec", "bash"]);

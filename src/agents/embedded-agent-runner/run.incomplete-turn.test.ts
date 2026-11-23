@@ -1,5 +1,6 @@
 // Coverage for incomplete-turn safety, retry instructions, and liveness states.
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { setReplyPayloadMetadata } from "../../auto-reply/reply-payload.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import {
   hasCommittedMessagingToolDeliveryEvidence,
@@ -84,6 +85,35 @@ describe("runEmbeddedAgent incomplete-turn safety", () => {
     }
     return call[0] as { prompt?: string };
   }
+
+  it.each([false, true])(
+    "drops quiet tool warnings at the terminal boundary with an answer present: %s",
+    async (hasAnswer) => {
+      const answer = "正常回复";
+      mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+        makeAttemptResult({
+          assistantTexts: hasAnswer ? [answer] : [],
+          lastToolError: { toolName: "exec", weixinFailureNotice: "quiet" },
+        }),
+      );
+      mockedBuildEmbeddedRunPayloads.mockReturnValueOnce([
+        ...(hasAnswer ? [{ text: answer }] : []),
+        setReplyPayloadMetadata(
+          { text: "Tool failed.", isError: true },
+          { quietToolErrorWarning: true },
+        ),
+      ]);
+
+      const result = await runEmbeddedAgent({
+        ...overflowBaseRunParams,
+        messageChannel: "openclaw-weixin",
+        runId: "run-quiet-weixin-failure",
+      });
+
+      expect(result.payloads).toEqual(hasAnswer ? [{ text: answer }] : undefined);
+      expect(result.meta.quietToolFailure).toBe(true);
+    },
+  );
 
   it("emits the before_agent_run hook block message as the agent payload", async () => {
     mockedRunEmbeddedAttempt.mockResolvedValueOnce(

@@ -92,6 +92,7 @@ import {
 import { buildToolMutationState, isSameToolMutationAction } from "./tool-mutation.js";
 import { normalizeToolName } from "./tool-policy.js";
 import { readToolResultDetails } from "./tool-result-error.js";
+import { recordWeixinToolResult } from "./weixin-tool-failure-streak.js";
 
 type ExecApprovalReplyModule = typeof import("../infra/exec-approval-reply.js");
 type HookRunnerGlobalModule = typeof import("../plugins/hook-runner-global.js");
@@ -874,6 +875,10 @@ async function emitToolResultOutput(params: {
     return;
   }
 
+  if (isToolError && ctx.params.trackWeixinToolFailures) {
+    return;
+  }
+
   const outputText = extractToolResultText(sanitizedResult);
   const mediaReply = isToolError ? undefined : extractToolResultMediaArtifact(result);
   const mediaUrls = mediaReply
@@ -1339,6 +1344,14 @@ export async function handleToolExecutionEnd(
   }
   ctx.state.toolMetaById.delete(toolCallId);
   ctx.state.toolSummaryById.delete(toolCallId);
+  const weixinFailureNotice =
+    ctx.params.trackWeixinToolFailures && !approvalUnavailable && toolName !== "sessions_send"
+      ? recordWeixinToolResult({
+          session: ctx.params.sessionId ?? ctx.params.sessionKey ?? runId,
+          runId,
+          failed: isToolError,
+        })
+      : undefined;
   if (isToolError) {
     const errorMessage = extractToolErrorMessage(sanitizedResult);
     const errorCode = extractToolErrorCode(sanitizedResult);
@@ -1357,8 +1370,12 @@ export async function handleToolExecutionEnd(
       mutatingAction: attemptedMutatingAction,
       actionFingerprint: attemptedMutatingAction ? callSummary.actionFingerprint : undefined,
       fileTarget: attemptedMutatingAction ? callSummary.fileTarget : undefined,
+      ...(weixinFailureNotice ? { weixinFailureNotice } : {}),
     };
   } else if (ctx.state.lastToolError) {
+    if (!approvalUnavailable && ctx.state.lastToolError.weixinFailureNotice) {
+      ctx.state.lastToolError.weixinFailureNotice = "quiet";
+    }
     // Keep unresolved mutating failures until the same action succeeds.
     if (ctx.state.lastToolError.mutatingAction) {
       if (

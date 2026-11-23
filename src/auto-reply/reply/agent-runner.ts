@@ -2020,7 +2020,9 @@ export async function runReplyAgent(params: {
             "message_tool_only",
           hasPendingContinuation:
             runResult.meta?.yielded === true || (runResult.meta?.pendingToolCalls?.length ?? 0) > 0,
-          hasExplicitSilentReply: hasDeliberateSilentTerminalReply(runResult),
+          hasExplicitSilentReply:
+            runResult.meta?.quietToolFailure === true ||
+            hasDeliberateSilentTerminalReply(runResult),
           hasCommittedDelivery: successfulTerminalDelivery,
           sessionCtx,
           cfg,
@@ -2378,7 +2380,10 @@ export async function runReplyAgent(params: {
     const prefixNotices: ReplyPayload[] = [];
 
     if (verboseEnabled && activeIsNewSession) {
-      prefixNotices.push({ text: `🧭 New session: ${followupRun.run.sessionId}` });
+      prefixNotices.push({
+        text: `🧭 New session: ${followupRun.run.sessionId}`,
+        isStatusNotice: true,
+      });
     }
 
     if (autoCompactionCount > 0) {
@@ -2426,7 +2431,10 @@ export async function runReplyAgent(params: {
 
       if (verboseEnabled) {
         const suffix = typeof count === "number" ? ` (count ${count})` : "";
-        prefixNotices.push({ text: `🧹 Auto-compaction complete${suffix}.` });
+        prefixNotices.push({
+          text: `🧹 Auto-compaction complete${suffix}.`,
+          isStatusNotice: true,
+        });
       }
     }
     const prefixPayloads = [...prefixNotices];
@@ -2568,7 +2576,7 @@ export async function runReplyAgent(params: {
       finalPayloads = [...prefixPayloads, ...finalPayloads];
     }
     if (trailingPluginStatusPayload) {
-      finalPayloads = [...finalPayloads, trailingPluginStatusPayload];
+      finalPayloads = [...finalPayloads, { ...trailingPluginStatusPayload, isStatusNotice: true }];
     }
     if (responseUsageLine) {
       finalPayloads = appendUsageLine(finalPayloads, responseUsageLine);

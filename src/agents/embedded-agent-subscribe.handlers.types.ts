@@ -284,6 +284,7 @@ type ToolHandlerParams = Pick<
   | "onToolResult"
   | "config"
   | "messageChannel"
+  | "trackWeixinToolFailures"
   | "sessionKey"
   | "currentChannelId"
   | "currentMessagingTarget"

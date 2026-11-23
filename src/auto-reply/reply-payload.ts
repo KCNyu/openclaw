@@ -252,6 +252,8 @@ export type ReplyPayloadMetadata = {
   beforeAgentRunBlocked?: boolean;
   /** Warning synthesized from an observed tool error after the run produced assistant output. */
   nonTerminalToolErrorWarning?: boolean;
+  /** Retains tool failure for run completion checks until the terminal payloads are selected. */
+  quietToolErrorWarning?: boolean;
 };
 
 const replyPayloadMetadata = new WeakMap<object, ReplyPayloadMetadata>();

@@ -42,6 +42,7 @@ export type SubscribeEmbeddedAgentSessionParams = {
   lifecycleGeneration?: string;
   /** Originating message channel used for subsystem log attribution. */
   messageChannel?: string;
+  trackWeixinToolFailures?: boolean;
   initialReplayState?: EmbeddedRunReplayState;
   hookRunner?: HookRunner;
   verboseLevel?: VerboseLevel;

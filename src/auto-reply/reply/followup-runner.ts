@@ -1597,7 +1597,9 @@ export function createFollowupRunner(params: {
             hasPendingContinuation:
               runResult.meta?.yielded === true ||
               (runResult.meta?.pendingToolCalls?.length ?? 0) > 0,
-            hasExplicitSilentReply: hasDeliberateSilentTerminalReply(runResult),
+            hasExplicitSilentReply:
+              runResult.meta?.quietToolFailure === true ||
+              hasDeliberateSilentTerminalReply(runResult),
             hasCommittedDelivery,
             sessionCtx: failureConversationContext,
             cfg: runtimeConfig,

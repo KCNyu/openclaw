@@ -9,7 +9,11 @@ import {
 } from "@openclaw/normalization-core/number-coercion";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { sanitizeForLog } from "../../../packages/terminal-core/src/ansi.js";
-import { FAST_MODE_AUTO_PROGRESS_KIND, type ReplyPayload } from "../../auto-reply/reply-payload.js";
+import {
+  FAST_MODE_AUTO_PROGRESS_KIND,
+  getReplyPayloadMetadata,
+  type ReplyPayload,
+} from "../../auto-reply/reply-payload.js";
 import type { ThinkLevel } from "../../auto-reply/thinking.js";
 import { SILENT_REPLY_TOKEN } from "../../auto-reply/tokens.js";
 import { getRuntimeConfigSnapshot } from "../../config/config.js";
@@ -4212,9 +4216,13 @@ async function runEmbeddedAgentInternal(
             : attempt.yieldDetected
               ? "end_turn"
               : (attemptAssistant?.stopReason as string | undefined);
-          const terminalPayloads = emptyAssistantReplyIsSilent
+          const terminalCandidates = emptyAssistantReplyIsSilent
             ? [{ text: SILENT_REPLY_TOKEN }]
             : payloadsForTerminalPath;
+          const terminalPayloads = terminalCandidates?.filter(
+            (payload) => getReplyPayloadMetadata(payload)?.quietToolErrorWarning !== true,
+          );
+          const quietToolFailure = terminalCandidates?.length !== terminalPayloads?.length;
           setTerminalLifecycleMeta({
             replayInvalid,
             livenessState,
@@ -4238,6 +4246,7 @@ async function runEmbeddedAgentInternal(
               livenessState,
               agentHarnessResultClassification: attempt.agentHarnessResultClassification,
               ...(attempt.yieldDetected ? { yielded: true } : {}),
+              ...(quietToolFailure ? { quietToolFailure: true } : {}),
               ...(emptyAssistantReplyIsSilent
                 ? { terminalReplyKind: "silent-empty" as const }
                 : {}),

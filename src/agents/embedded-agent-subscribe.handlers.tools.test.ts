@@ -936,6 +936,32 @@ describe("handleToolExecutionEnd sessions_spawn terminal success tracking", () =
   });
 });
 
+describe("handleToolExecutionEnd Weixin tool failures", () => {
+  it("counts observed failures before payload building and resets after a successful tool", async () => {
+    const { ctx } = createTestContext();
+    ctx.params.sessionId = "weixin-tool-events-session";
+    ctx.params.trackWeixinToolFailures = true;
+    ctx.shouldEmitToolOutput = () => true;
+
+    for (const [index, isError] of [true, true, true, false, true].entries()) {
+      await handleToolExecutionEnd(ctx, {
+        type: "tool_execution_end",
+        toolName: "read",
+        toolCallId: `weixin-tool-${index}`,
+        isError,
+        result: { content: [{ type: "text", text: isError ? "read failed" : "file contents" }] },
+      });
+      expect(ctx.state.lastToolError?.weixinFailureNotice).toEqual(
+        index === 2 ? { consecutiveFailures: 3 } : isError ? "quiet" : undefined,
+      );
+    }
+    expect(ctx.emitToolOutput).toHaveBeenCalledTimes(1);
+    expect(ctx.emitToolOutput).toHaveBeenCalledWith("read", undefined, "file contents", {
+      content: [{ type: "text", text: "file contents" }],
+    });
+  });
+});
+
 describe("handleToolExecutionEnd mutating failure recovery", () => {
   it("preserves middleware failure across an unrelated tool success", async () => {
     const { ctx } = createTestContext();
