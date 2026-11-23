@@ -17,7 +17,7 @@ import {
 import { requestHeartbeat } from "../infra/heartbeat-wake.js";
 import { findPathKey, mergePathPrepend, removePathPrepend } from "../infra/path-prepend.js";
 import { enqueueSystemEvent } from "../infra/system-events.js";
-import { isSubagentSessionKey } from "../sessions/session-key-utils.js";
+import { isCronRunSessionKey, isSubagentSessionKey } from "../sessions/session-key-utils.js";
 /**
  * Bash exec runtime.
  * Spawns host/sandbox processes, manages session updates/backgrounding,
@@ -322,6 +322,11 @@ function maybeNotifyOnExit(session: ProcessSession, status: "completed" | "faile
     return;
   }
   session.exitNotified = true;
+  // The cron run can read the process result directly. Its heartbeat route
+  // would feed both the exit event and wake to the agent's main session.
+  if (isCronRunSessionKey(sessionKey)) {
+    return;
+  }
   const exitLabel = session.exitSignal
     ? `signal ${session.exitSignal}`
     : `code ${session.exitCode ?? 0}`;
@@ -596,14 +601,8 @@ export async function runExecProcess(opts: {
   notifyOnExitEmptySuccess?: boolean;
   scopeKey?: string;
   sessionKey?: string;
-  /** `session.mainKey` from the runtime config; snapshotted onto the
-   *  ProcessSession so background-exit notifications can remap cron-run
-   *  keys without an ambient config load. Long-running background exits use
-   *  this start-time value even if config changes while the process runs. */
+  /** Session routing defaults captured when the exec starts. */
   mainKey?: string;
-  /** `session.scope` from the runtime config; snapshotted alongside
-   *  `mainKey` so the cron-run remap can route global-scope agents to
-   *  the "global" queue instead of agent-main. */
   sessionScope?: "per-sender" | "global";
   /** Start-time routing policy for detached exec system events. */
   eventRouting?: EventSessionRoutingPolicy;

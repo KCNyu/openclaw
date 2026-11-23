@@ -14,6 +14,8 @@ export const DEFAULT_SQLITE_WAL_CHECKPOINT_INTERVAL_MS = 30 * 60 * 1000;
  * Periodic checkpoints default to PASSIVE.
  */
 export const DEFAULT_SQLITE_WAL_TRUNCATE_INTERVAL_MS = DEFAULT_SQLITE_WAL_CHECKPOINT_INTERVAL_MS;
+// SQLite trims an oversized WAL when a writer resets fully checkpointed frames.
+const DEFAULT_SQLITE_WAL_JOURNAL_SIZE_LIMIT_BYTES = 64 * 1024 * 1024;
 const LINUX_NFS_SUPER_MAGIC = 0x6969;
 const LINUX_SMB_SUPER_MAGIC = 0x517b;
 const LINUX_CIFS_SUPER_MAGIC = 0xff534d42;
@@ -327,6 +329,7 @@ export function configureSqliteWalMaintenance(
   db.exec("PRAGMA journal_mode = WAL;");
   enableMacosCheckpointFullfsync(db);
   db.exec(`PRAGMA wal_autocheckpoint = ${autoCheckpointPages};`);
+  db.exec(`PRAGMA journal_size_limit = ${DEFAULT_SQLITE_WAL_JOURNAL_SIZE_LIMIT_BYTES};`);
 
   const runCheckpoint = (mode: SqliteWalCheckpointMode): boolean => {
     try {

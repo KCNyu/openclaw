@@ -60,13 +60,8 @@ export type ExecToolDefaults = {
    *  exec approval followup path resolve the session key's current sessionId and
    *  drop the followup when the key was rebound by `/new` or `/reset`. */
   sessionStore?: string;
-  /** `session.mainKey` from the runtime config; passed through into
-   *  runExecProcess so background-exit notifications can remap cron-run
-   *  session keys to the agent's main queue without an ambient config load. */
+  /** Session routing defaults captured when the exec starts. */
   mainKey?: string;
-  /** `session.scope` from the runtime config; passed alongside `mainKey`
-   *  so the cron-run remap can route global-scope agents to the "global"
-   *  queue instead of agent-main. */
   sessionScope?: "per-sender" | "global";
   /** Start-time routing policy for detached exec system events. */
   eventRouting?: EventSessionRoutingPolicy;

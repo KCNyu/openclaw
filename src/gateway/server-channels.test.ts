@@ -504,7 +504,7 @@ describe("server-channels auto restart", () => {
     }
   });
 
-  it("does not allow a second account task to start when stop times out", async () => {
+  it("queues an explicit start without replacing a task that failed to stop", async () => {
     const startAccount = vi.fn(
       async ({ abortSignal }: { abortSignal: AbortSignal }) =>
         await new Promise<void>(() => {
@@ -522,13 +522,13 @@ describe("server-channels auto restart", () => {
     const stopTask = manager.stopChannel("discord", DEFAULT_ACCOUNT_ID);
     await vi.advanceTimersByTimeAsync(5_000);
     await stopTask;
-    await manager.startChannel("discord", DEFAULT_ACCOUNT_ID);
+    await manager.startChannel("discord", DEFAULT_ACCOUNT_ID, { manual: true });
 
     const snapshot = manager.getRuntimeSnapshot();
     const account = snapshot.channelAccounts.discord?.[DEFAULT_ACCOUNT_ID];
     expect(startAccount).toHaveBeenCalledTimes(1);
     expect(account?.running).toBe(true);
-    expect(account?.restartPending).toBe(false);
+    expect(account?.restartPending).toBe(true);
     expect(account?.lastError).toContain("channel stop timed out");
   });
 
@@ -913,48 +913,82 @@ describe("server-channels auto restart", () => {
     expect(hoisted.sleepWithAbort.mock.calls[0]?.[0]).toBe(10);
   });
 
-  it("lets explicit starts win after a manual timeout during recovery stop", async () => {
-    const releaseFirstTask = createDeferred();
-    let startCount = 0;
-    const startAccount = vi.fn(async ({ abortSignal }: { abortSignal: AbortSignal }) => {
-      startCount += 1;
-      abortSignal.addEventListener("abort", () => {}, { once: true });
-      if (startCount === 1) {
-        await releaseFirstTask.promise;
-        return;
+  it.each(["none", "earlier", "overlap-timeout", "overlap-clean", "suppressed"])(
+    "recovers a manual stop timeout (recovery stop: %s)",
+    async (recoveryStop) => {
+      const releaseFirstTask = createDeferred();
+      const releaseRecoveryStopHook = createDeferred();
+      let startCount = 0;
+      const startAccount = vi.fn(async ({ abortSignal }: { abortSignal: AbortSignal }) => {
+        startCount += 1;
+        abortSignal.addEventListener("abort", () => {}, { once: true });
+        if (startCount === 1) {
+          await releaseFirstTask.promise;
+          return;
+        }
+        await new Promise<void>(() => {});
+      });
+      const stopAccount = vi.fn(async (_ctx: ChannelGatewayContext<TestAccount>) => {});
+      if (recoveryStop.startsWith("overlap-")) {
+        stopAccount.mockImplementationOnce(async (ctx) => {
+          await releaseRecoveryStopHook.promise;
+          ctx.setStatus({ accountId: ctx.accountId, running: false, lastError: "old stop hook" });
+        });
       }
-      await new Promise<void>(() => {});
-    });
-    installTestRegistry(
-      createTestPlugin({
-        startAccount,
-      }),
-    );
-    const manager = createManager();
+      installTestRegistry(createTestPlugin({ startAccount, stopAccount }));
+      const manager = createManager();
 
-    await manager.startChannels();
-    const recoveryStopTask = manager.stopChannel("discord", DEFAULT_ACCOUNT_ID, {
-      manual: false,
-    });
-    await vi.advanceTimersByTimeAsync(5_000);
-    await recoveryStopTask;
+      await manager.startChannels();
+      const recoveryStopTask =
+        recoveryStop === "none" || recoveryStop === "suppressed"
+          ? undefined
+          : manager.stopChannel("discord", DEFAULT_ACCOUNT_ID, { manual: false });
+      if (recoveryStop === "earlier") {
+        await vi.advanceTimersByTimeAsync(5_000);
+        await recoveryStopTask;
+      }
 
-    const manualStopTask = manager.stopChannel("discord", DEFAULT_ACCOUNT_ID);
-    await vi.advanceTimersByTimeAsync(5_000);
-    await manualStopTask;
-    await manager.startChannel("discord", DEFAULT_ACCOUNT_ID);
-    releaseFirstTask.resolve();
-    await waitForMicrotaskCondition(
-      () => startAccount.mock.calls.length === 2,
-      "expected explicit start to clear manual stop and restart after old task exits",
-    );
+      const manualStopTask = manager.stopChannel("discord", DEFAULT_ACCOUNT_ID);
+      await vi.advanceTimersByTimeAsync(5_000);
+      await manualStopTask;
+      if (recoveryStop === "overlap-timeout") {
+        releaseRecoveryStopHook.resolve();
+        await vi.advanceTimersByTimeAsync(5_000);
+        await recoveryStopTask;
+        await manager.startChannel("discord", DEFAULT_ACCOUNT_ID, { preserveManualStop: true });
+      }
+      await manager.startChannel("discord", DEFAULT_ACCOUNT_ID);
+      expect(manager.isManuallyStopped("discord", DEFAULT_ACCOUNT_ID)).toBe(true);
+      expect(startAccount).toHaveBeenCalledTimes(1);
+      if (recoveryStop === "suppressed") {
+        manager.setAutostartSuppression({
+          reason: "crash-loop-breaker",
+          message: "safe mode",
+        });
+      }
+      await manager.startChannel("discord", DEFAULT_ACCOUNT_ID, { manual: true });
+      await manager.startChannel("discord", DEFAULT_ACCOUNT_ID, { manual: true });
+      expect(startAccount).toHaveBeenCalledTimes(1);
+      releaseFirstTask.resolve();
+      await waitForMicrotaskCondition(
+        () => startAccount.mock.calls.length === 2,
+        "expected explicit start to clear manual stop and restart after old task exits",
+      );
 
-    const account = manager.getRuntimeSnapshot().channelAccounts.discord?.[DEFAULT_ACCOUNT_ID];
-    expect(account?.running).toBe(true);
-    expect(account?.restartPending).toBe(false);
-    expect(manager.isManuallyStopped("discord", DEFAULT_ACCOUNT_ID)).toBe(false);
-    expect(hoisted.sleepWithAbort).not.toHaveBeenCalled();
-  });
+      if (recoveryStop === "overlap-clean") {
+        releaseRecoveryStopHook.resolve();
+        await recoveryStopTask;
+        await manager.startChannel("discord", DEFAULT_ACCOUNT_ID, { preserveManualStop: true });
+        expect(startAccount).toHaveBeenCalledTimes(2);
+      }
+      const account = manager.getRuntimeSnapshot().channelAccounts.discord?.[DEFAULT_ACCOUNT_ID];
+      expect(account?.running).toBe(true);
+      expect(account?.lastError).toBeNull();
+      expect(account?.restartPending).toBe(false);
+      expect(manager.isManuallyStopped("discord", DEFAULT_ACCOUNT_ID)).toBe(false);
+      expect(hoisted.sleepWithAbort).not.toHaveBeenCalled();
+    },
+  );
 
   it("marks enabled/configured when account descriptors omit them", () => {
     installTestRegistry(

@@ -32,10 +32,11 @@ let detectCursorKeyMode: typeof import("./bash-tools.exec-runtime.js").detectCur
 let formatExecFailureReason: typeof import("./bash-tools.exec-runtime.js").formatExecFailureReason;
 let renderExecUpdateText: typeof import("./bash-tools.exec-runtime.js").renderExecUpdateText;
 let resolveExecTarget: typeof import("./bash-tools.exec-runtime.js").resolveExecTarget;
+let getFinishedSession: typeof import("./bash-process-registry.js").getFinishedSession;
 let runExecProcess: typeof import("./bash-tools.exec-runtime.js").runExecProcess;
 
 beforeAll(async () => {
-  ({ markBackgrounded } = await import("./bash-process-registry.js"));
+  ({ getFinishedSession, markBackgrounded } = await import("./bash-process-registry.js"));
   ({
     buildExecExitOutcome,
     detectCursorKeyMode,
@@ -388,6 +389,8 @@ describe("exec notifyOnExit suppression", () => {
   async function runBackgroundedExit(params: {
     reason: "manual-cancel" | "overall-timeout";
     stdout?: string;
+    sessionKey?: string;
+    sessionScope?: "per-sender" | "global";
   }) {
     supervisorMock.spawn.mockImplementationOnce(
       async (input: { onStdout?: (chunk: string) => void }) => {
@@ -428,12 +431,30 @@ describe("exec notifyOnExit suppression", () => {
       pendingMaxOutput: 1000,
       notifyOnExit: true,
       notifyOnExitEmptySuccess: false,
-      sessionKey: "agent:main:main",
+      sessionKey: params.sessionKey ?? "agent:main:main",
+      sessionScope: params.sessionScope,
       timeoutSec: null,
     });
     markBackgrounded(run.session);
-    return await run.promise;
+    const outcome = await run.promise;
+    return { ...outcome, processId: run.session.id };
   }
+
+  it.each(["per-sender", "global"] as const)(
+    "keeps isolated cron exec output in the process log under %s session scope",
+    async (sessionScope) => {
+      const { processId } = await runBackgroundedExit({
+        reason: "overall-timeout",
+        stdout: "cron result\n",
+        sessionKey: "agent:main:cron:daily:run:run-1",
+        sessionScope,
+      });
+
+      expect(enqueueSystemEventMock).not.toHaveBeenCalled();
+      expect(requestHeartbeatMock).not.toHaveBeenCalled();
+      expect(getFinishedSession(processId)?.aggregated).toContain("cron result");
+    },
+  );
 
   it("keeps manual-cancelled no-output background execs silent", async () => {
     const outcome = await runBackgroundedExit({ reason: "manual-cancel" });
