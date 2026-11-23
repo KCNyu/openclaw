@@ -583,7 +583,12 @@ describe("runWithModelFallback", () => {
     const catalog: ThinkingCatalogEntry[] = [
       { provider: "minimax", id: flash, api: "anthropic-messages", compat: flashCompat },
       { provider: "minimax-2", id: flash, api: "anthropic-messages", compat: flashCompat },
-      { provider: "openai", id: luna, reasoning: true },
+      {
+        provider: "openai",
+        id: luna,
+        reasoning: true,
+        compat: { supportedReasoningEfforts: ["low", "medium", "high", "xhigh", "max"] },
+      },
     ];
     const hops: Array<{ provider: string; level: string | undefined }> = [];
     const result = await runWithModelFallback({
