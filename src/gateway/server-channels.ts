@@ -274,8 +274,8 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
   const restartAttempts = new Map<string, number>();
   // Tracks accounts that were manually stopped so we don't auto-restart them.
   const manuallyStopped = new Set<string>();
-  const recoveryStopTimedOut = new Set<string>();
-  const recoveryStartRequested = new Set<string>();
+  const stopTimeouts = new Map<string, "manual" | "recovery">();
+  const pendingStarts = new Map<string, "manual" | "automatic">();
   let autostartSuppression: ChannelAutostartSuppression | null = null;
 
   const restartKey = (channelId: ChannelId, accountId: string) => `${channelId}:${accountId}`;
@@ -428,7 +428,7 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
       store.runtimes.delete(id);
       restartAttempts.delete(restartKey(channelId, id));
       manuallyStopped.delete(restartKey(channelId, id));
-      recoveryStartRequested.delete(restartKey(channelId, id));
+      pendingStarts.delete(restartKey(channelId, id));
     }
   };
 
@@ -479,19 +479,19 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
         const rKey = restartKey(channelId, id);
         if (store.tasks.has(id)) {
           let clearedTimedOutRecoveryTask = false;
-          if (recoveryStopTimedOut.has(rKey)) {
-            if (!preserveManualStop) {
+          const stopTimeout = stopTimeouts.get(rKey);
+          if (stopTimeout) {
+            if (!preserveManualStop && (stopTimeout === "recovery" || optsValue.manual === true)) {
               manuallyStopped.delete(rKey);
             }
             if (manuallyStopped.has(rKey)) {
               return;
             }
-            // When a previous stop timed out and the health monitor is
-            // requesting recovery again, clean up the stuck task so the
-            // channel can actually restart instead of staying in limbo.
-            if (recoveryStartRequested.has(rKey)) {
-              recoveryStopTimedOut.delete(rKey);
-              recoveryStartRequested.delete(rKey);
+            // Preserve the health monitor's forced recovery. An explicit
+            // start after a manual stop waits for the existing task to exit.
+            if (stopTimeout === "recovery" && pendingStarts.has(rKey)) {
+              stopTimeouts.delete(rKey);
+              pendingStarts.delete(rKey);
               restartAttempts.delete(rKey);
               store.aborts.delete(id);
               store.tasks.delete(id);
@@ -502,7 +502,8 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
                 reconnectAttempts: 0,
               });
             } else {
-              recoveryStartRequested.add(rKey);
+              const manualStart = optsValue.manual === true || pendingStarts.get(rKey) === "manual";
+              pendingStarts.set(rKey, manualStart ? "manual" : "automatic");
               setRuntime(channelId, id, { accountId: id, restartPending: true });
               return;
             }
@@ -717,15 +718,15 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
                 return;
               }
               if (manuallyStopped.has(rKey)) {
-                recoveryStopTimedOut.delete(rKey);
-                recoveryStartRequested.delete(rKey);
+                stopTimeouts.delete(rKey);
+                pendingStarts.delete(rKey);
                 return;
               }
               if (getRuntime(channelId, id).terminalDisconnect) {
                 // Authentication/session termination wins over pending recovery.
                 // Leaving recovery state behind would restart a channel that needs user action.
-                recoveryStopTimedOut.delete(rKey);
-                recoveryStartRequested.delete(rKey);
+                stopTimeouts.delete(rKey);
+                pendingStarts.delete(rKey);
                 restartAttempts.delete(rKey);
                 setRuntime(channelId, id, {
                   accountId: id,
@@ -735,9 +736,11 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
                 log.info?.(`[${id}] auto-restart skipped, terminal disconnect`);
                 return;
               }
-              if (recoveryStopTimedOut.has(rKey)) {
-                recoveryStopTimedOut.delete(rKey);
-                if (!recoveryStartRequested.delete(rKey)) {
+              if (stopTimeouts.has(rKey)) {
+                stopTimeouts.delete(rKey);
+                const pendingStart = pendingStarts.get(rKey);
+                pendingStarts.delete(rKey);
+                if (!pendingStart) {
                   setRuntime(channelId, id, {
                     accountId: id,
                     restartPending: false,
@@ -766,6 +769,7 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
                 }
                 try {
                   await startChannelInternal(channelId, id, {
+                    manual: pendingStart === "manual",
                     preserveManualStop: true,
                   });
                 } catch {
@@ -905,6 +909,12 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
         if (!abort && !task && !plugin?.gateway?.stopAccount) {
           return;
         }
+        // Stop hooks and completion may outlive the task they were asked to stop.
+        const hasReplacement = () => {
+          const currentTask = store.tasks.get(id);
+          const currentAbort = store.aborts.get(id);
+          return (currentTask && currentTask !== task) || (currentAbort && currentAbort !== abort);
+        };
         const rKey = restartKey(channelId, id);
         if (manual) {
           manuallyStopped.add(rKey);
@@ -922,14 +932,25 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
             abortSignal: abort?.signal ?? new AbortController().signal,
             log,
             getStatus: () => getRuntime(channelId, id),
-            setStatus: (next) => setRuntime(channelId, id, next),
+            setStatus: (next) => {
+              if (!hasReplacement()) {
+                setRuntime(channelId, id, next);
+              }
+            },
           });
         }
         const stoppedCleanly = await waitForChannelStopGracefully(
           task,
           CHANNEL_STOP_ABORT_TIMEOUT_MS,
         );
+        if (hasReplacement()) {
+          return;
+        }
         if (!stoppedCleanly) {
+          // A later recovery timeout must preserve the manual stop policy.
+          if (store.tasks.get(id) !== task || (!manual && stopTimeouts.get(rKey) === "manual")) {
+            return;
+          }
           log.warn?.(
             `[${id}] channel stop exceeded ${CHANNEL_STOP_ABORT_TIMEOUT_MS}ms after abort; continuing shutdown`,
           );
@@ -946,13 +967,11 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
           } else {
             setStoppedRuntime(channelId, id, stoppedPatch);
           }
-          if (!manual) {
-            recoveryStopTimedOut.add(rKey);
-          }
+          stopTimeouts.set(rKey, manual ? "manual" : "recovery");
           return;
         }
-        recoveryStopTimedOut.delete(rKey);
-        recoveryStartRequested.delete(rKey);
+        stopTimeouts.delete(rKey);
+        pendingStarts.delete(rKey);
         store.aborts.delete(id);
         store.tasks.delete(id);
         setStoppedRuntime(channelId, id, {

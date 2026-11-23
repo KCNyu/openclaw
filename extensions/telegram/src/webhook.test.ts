@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { once } from "node:events";
 import fs from "node:fs/promises";
-import { request, type IncomingMessage } from "node:http";
+import { createServer, request, type IncomingMessage } from "node:http";
 import os from "node:os";
 import nodePath from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -30,6 +30,8 @@ const handleUpdateSpy = vi.hoisted(() => vi.fn((..._args: unknown[]): unknown =>
 const setWebhookSpy = vi.hoisted(() => vi.fn());
 const deleteWebhookSpy = vi.hoisted(() => vi.fn(async () => true));
 const initSpy = vi.hoisted(() => vi.fn(async () => undefined));
+const startDiagnosticHeartbeatSpy = vi.hoisted(() => vi.fn(() => true));
+const stopDiagnosticHeartbeatSpy = vi.hoisted(() => vi.fn());
 const stopSpy = vi.hoisted(() => vi.fn());
 const createTelegramBotSpy = vi.hoisted(() =>
   vi.fn(() => ({
@@ -110,6 +112,12 @@ function createSingleSettlement<T>(params: {
   };
 }
 
+vi.mock("openclaw/plugin-sdk/logging-core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("openclaw/plugin-sdk/logging-core")>()),
+  startDiagnosticHeartbeat: startDiagnosticHeartbeatSpy,
+  stopDiagnosticHeartbeat: stopDiagnosticHeartbeatSpy,
+}));
+
 vi.mock("grammy", async () => {
   const actual = await vi.importActual<typeof import("grammy")>("grammy");
   return {
@@ -171,6 +179,8 @@ function resetTelegramWebhookMocks(): void {
   initSpy.mockReset();
   initSpy.mockImplementation(async () => undefined);
   stopSpy.mockReset();
+  startDiagnosticHeartbeatSpy.mockReset().mockReturnValue(true);
+  stopDiagnosticHeartbeatSpy.mockClear();
   resolveTelegramTransportSpy.mockClear();
   transportCloseSpies.length = 0;
   createTelegramBotSpy.mockReset();
@@ -618,6 +628,54 @@ describe("startTelegramWebhook", () => {
     );
   });
 
+  it.each([true, false])(
+    "cleans up a listener bind failure (owns diagnostics: %s)",
+    async (ownsDiagnostics) => {
+      startDiagnosticHeartbeatSpy.mockReturnValue(ownsDiagnostics);
+      const blocker = createServer();
+      const listening = once(blocker, "listening");
+      blocker.listen(0, "127.0.0.1");
+      try {
+        await listening;
+        const address = blocker.address();
+        if (!address || typeof address === "string") {
+          throw new Error("expected a TCP listener");
+        }
+        await expect(
+          startTelegramWebhook({
+            token: TELEGRAM_TOKEN,
+            port: address.port,
+            secret: TELEGRAM_SECRET,
+            spoolDir: requireWebhookSpoolDir(),
+          }),
+        ).rejects.toMatchObject({ code: "EADDRINUSE" });
+
+        expect(stopSpy).toHaveBeenCalledTimes(1);
+        expect(transportCloseSpies[0]).toHaveBeenCalledTimes(1);
+        expect(setWebhookSpy).not.toHaveBeenCalled();
+        expect(startDiagnosticHeartbeatSpy).toHaveBeenCalledTimes(1);
+        expect(stopDiagnosticHeartbeatSpy).toHaveBeenCalledTimes(ownsDiagnostics ? 1 : 0);
+      } finally {
+        await new Promise<void>((resolve) => {
+          blocker.close(() => resolve());
+        });
+      }
+    },
+  );
+
+  it("closes the transport when bot construction fails", async () => {
+    const error = new Error("bot construction failed");
+    createTelegramBotSpy.mockImplementationOnce(() => {
+      throw error;
+    });
+
+    await expect(
+      startTelegramWebhook({ token: TELEGRAM_TOKEN, port: 0, secret: TELEGRAM_SECRET }),
+    ).rejects.toBe(error);
+    expect(transportCloseSpies[0]).toHaveBeenCalledTimes(1);
+    expect(stopSpy).not.toHaveBeenCalled();
+  });
+
   it("fails startup when setWebhook has a non-recoverable rejection", async () => {
     const runtimeError = vi.fn();
     const error = Object.assign(new Error("unauthorized"), { error_code: 401 });
@@ -709,10 +767,11 @@ describe("startTelegramWebhook", () => {
     expect(setWebhookSpy).toHaveBeenCalledTimes(1);
   });
 
-  it("fails startup on non-recoverable getMe errors", async () => {
+  it("preserves non-recoverable getMe errors if bot cleanup fails", async () => {
     const runtimeError = vi.fn();
     const error = Object.assign(new Error("unauthorized"), { error_code: 401 });
     initSpy.mockRejectedValueOnce(error);
+    stopSpy.mockRejectedValueOnce(new Error("stop failed"));
 
     await expect(
       startTelegramWebhook({
@@ -723,12 +782,13 @@ describe("startTelegramWebhook", () => {
         spoolDir: requireWebhookSpoolDir(),
         runtime: { log: vi.fn(), error: runtimeError, exit: vi.fn() },
       }),
-    ).rejects.toThrow("unauthorized");
+    ).rejects.toBe(error);
 
     expect(setWebhookSpy).not.toHaveBeenCalled();
     expect(stopSpy).toHaveBeenCalledTimes(1);
     expect(transportCloseSpies[0]).toHaveBeenCalledTimes(1);
     expectMockMessageContains(runtimeError, "telegram getMe failed: unauthorized");
+    expectMockMessageContains(runtimeError, "telegram webhook bot stop failed: stop failed");
   });
 
   it("registers webhook with certificate when webhookCertPath is provided", async () => {

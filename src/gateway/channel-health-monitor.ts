@@ -203,7 +203,9 @@ export function startChannelHealthMonitor(deps: ChannelHealthMonitorDeps): Chann
               });
             }
             channelManager.resetRestartAttempts(channelId as ChannelId, accountId);
-            await channelManager.startChannel(channelId as ChannelId, accountId);
+            await channelManager.startChannel(channelId as ChannelId, accountId, {
+              preserveManualStop: true,
+            });
           } catch (err) {
             log.error?.(
               `[${channelId}:${accountId}] health-monitor: restart failed: ${String(err)}`,

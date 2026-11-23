@@ -1193,17 +1193,18 @@ export function logActiveRuns() {
 
 let heartbeatInterval: NodeJS.Timeout | null = null;
 
+/** Returns whether this call started the process-wide heartbeat. */
 export function startDiagnosticHeartbeat(
   config?: OpenClawConfig,
   opts?: StartDiagnosticHeartbeatOptions,
-) {
+): boolean {
   if (!areDiagnosticsEnabledForProcess() || !isDiagnosticsEnabled(config)) {
-    return;
+    return false;
   }
   startDiagnosticStabilityRecorder();
   installDiagnosticStabilityFatalHook();
   if (heartbeatInterval) {
-    return;
+    return false;
   }
   startDiagnosticLivenessSampler();
   const livenessGraceUntil =
@@ -1347,6 +1348,7 @@ export function startDiagnosticHeartbeat(
     }
   }, 30_000);
   heartbeatInterval.unref?.();
+  return true;
 }
 
 export function stopDiagnosticHeartbeat() {

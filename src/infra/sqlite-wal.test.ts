@@ -6,6 +6,7 @@ import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MAX_TIMER_TIMEOUT_MS } from "../shared/number-coercion.js";
+import { requireNodeSqlite } from "./node-sqlite.js";
 import {
   DEFAULT_SQLITE_WAL_AUTOCHECKPOINT_PAGES,
   configureSqliteConnectionPragmas,
@@ -38,6 +39,32 @@ describe("sqlite WAL maintenance", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.useRealTimers();
+  });
+
+  it("reclaims an oversized WAL when the writer resets it after a checkpoint", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-sqlite-wal-"));
+    const databasePath = path.join(tempDir, "test.sqlite");
+    const { DatabaseSync } = requireNodeSqlite();
+    const db = new DatabaseSync(databasePath);
+    const sizeLimit = 64 * 1024 * 1024;
+    try {
+      const maintenance = configureSqliteWalMaintenance(db, {
+        autoCheckpointPages: 0,
+        checkpointIntervalMs: 0,
+        checkpointMode: "PASSIVE",
+      });
+      db.exec("CREATE TABLE items (value BLOB);");
+      db.exec("INSERT INTO items VALUES (zeroblob(80 * 1024 * 1024));");
+      expect(fs.statSync(`${databasePath}-wal`).size).toBeGreaterThan(sizeLimit);
+
+      expect(maintenance.checkpoint()).toBe(true);
+      expect(fs.statSync(`${databasePath}-wal`).size).toBeGreaterThan(sizeLimit);
+      db.exec("INSERT INTO items VALUES (zeroblob(1));");
+      expect(fs.statSync(`${databasePath}-wal`).size).toBeLessThanOrEqual(sizeLimit);
+    } finally {
+      db.close();
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it("enables WAL mode and explicit autocheckpointing", () => {
@@ -454,18 +481,18 @@ describe("sqlite WAL maintenance", () => {
     vi.spyOn(process, "platform", "get").mockReturnValue("linux");
 
     const maintenance = configureSqliteWalMaintenance(db, { checkpointIntervalMs: 100 });
-    expect(db["exec"]).toHaveBeenCalledTimes(2);
+    expect(db["exec"]).toHaveBeenCalledTimes(3);
 
     vi.advanceTimersByTime(100);
     expect(db["exec"]).toHaveBeenLastCalledWith("PRAGMA wal_checkpoint(PASSIVE);");
-    expect(db["exec"]).toHaveBeenCalledTimes(3);
+    expect(db["exec"]).toHaveBeenCalledTimes(4);
 
     expect(maintenance.close()).toBe(true);
     expect(db["exec"]).toHaveBeenLastCalledWith("PRAGMA wal_checkpoint(TRUNCATE);");
-    expect(db["exec"]).toHaveBeenCalledTimes(4);
+    expect(db["exec"]).toHaveBeenCalledTimes(5);
 
     vi.advanceTimersByTime(200);
-    expect(db["exec"]).toHaveBeenCalledTimes(4);
+    expect(db["exec"]).toHaveBeenCalledTimes(5);
   });
 
   it("clamps oversized checkpoint intervals before arming timers", () => {
@@ -536,8 +563,9 @@ describe("sqlite WAL maintenance", () => {
       3,
       `PRAGMA wal_autocheckpoint = ${DEFAULT_SQLITE_WAL_AUTOCHECKPOINT_PAGES};`,
     );
-    expect(db["exec"]).toHaveBeenNthCalledWith(4, "PRAGMA synchronous = NORMAL;");
-    expect(db["exec"]).toHaveBeenNthCalledWith(5, "PRAGMA foreign_keys = ON;");
+    expect(db["exec"]).toHaveBeenNthCalledWith(4, "PRAGMA journal_size_limit = 67108864;");
+    expect(db["exec"]).toHaveBeenNthCalledWith(5, "PRAGMA synchronous = NORMAL;");
+    expect(db["exec"]).toHaveBeenNthCalledWith(6, "PRAGMA foreign_keys = ON;");
   });
 
   it("sets busy timeout before rollback journaling on NFS-backed volumes", () => {
