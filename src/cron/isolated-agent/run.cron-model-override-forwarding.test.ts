@@ -596,7 +596,12 @@ describe("runCronIsolatedAgentTurn — cron model override forwarding (#58065)",
           },
         },
         job: makeJob({
-          payload: { kind: "agentTurn", message: "summarize", model: `minimax/${flash}`, thinking: "high" },
+          payload: {
+            kind: "agentTurn",
+            message: "summarize",
+            model: `minimax/${flash}`,
+            thinking: "high",
+          },
         }),
       }),
     );

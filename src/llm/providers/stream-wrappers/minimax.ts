@@ -14,10 +14,19 @@ function resolveMinimaxFastModelId(modelId: unknown): string | undefined {
   return MINIMAX_FAST_MODEL_IDS.get(modelId.trim());
 }
 
-function isMinimaxAnthropicMessagesModel(model: { api?: unknown; provider?: unknown }): boolean {
+function isMinimaxAnthropicMessagesModel(model: {
+  api?: unknown;
+  provider?: unknown;
+  id?: unknown;
+  baseUrl?: unknown;
+}): boolean {
   return (
     model.api === "anthropic-messages" &&
-    (model.provider === "minimax" || model.provider === "minimax-portal")
+    (model.provider === "minimax" ||
+      model.provider === "minimax-portal" ||
+      (isMinimaxModelRequiringThinking(model) &&
+        typeof model.baseUrl === "string" &&
+        /^https:\/\/api\.minimax(?:i\.com|\.cn|\.io)\/anthropic(?:\/|$)/i.test(model.baseUrl)))
   );
 }
 

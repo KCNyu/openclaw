@@ -145,30 +145,35 @@ describe("createMinimaxThinkingDisabledWrapper", () => {
     expect(capturedThinking).toEqual({ type: "disabled" });
   });
 
-  it("rewrites MiniMax-M3 default budget thinking to adaptive", () => {
-    let capturedThinking: unknown = undefined;
-    const baseStreamFn: StreamFn = (model, context, options) => {
-      const payload: Record<string, unknown> = {
-        thinking: { type: "enabled", budget_tokens: 1024 },
+  it.each(["minimax", "minimax-2"])(
+    "sends adaptive without effort for the default %s hop",
+    (provider) => {
+      let capturedPayload: Record<string, unknown> | undefined;
+      const baseStreamFn: StreamFn = (model, context, options) => {
+        const payload: Record<string, unknown> = {
+          thinking: { type: "enabled", budget_tokens: 1024 },
+        };
+        options?.onPayload?.(payload, model);
+        capturedPayload = payload;
+        return {} as ReturnType<StreamFn>;
       };
-      options?.onPayload?.(payload, model);
-      capturedThinking = payload.thinking;
-      return {} as ReturnType<StreamFn>;
-    };
 
-    const wrapped = createMinimaxThinkingDisabledWrapper(baseStreamFn, "adaptive");
-    void wrapped(
-      {
-        api: "anthropic-messages",
-        provider: "minimax",
-        id: "MiniMax-M3",
-      } as Model<"anthropic-messages">,
-      { messages: [] } as Context,
-      {},
-    );
+      const wrapped = createMinimaxThinkingDisabledWrapper(baseStreamFn, "adaptive");
+      void wrapped(
+        {
+          api: "anthropic-messages",
+          provider,
+          baseUrl: "https://api.minimaxi.com/anthropic",
+          id: "MiniMax-M3.1-Flash",
+        } as Model<"anthropic-messages">,
+        { messages: [] } as Context,
+        {},
+      );
 
-    expect(capturedThinking).toEqual({ type: "adaptive" });
-  });
+      expect(capturedPayload).toMatchObject({ thinking: { type: "adaptive" } });
+      expect(capturedPayload).not.toHaveProperty("output_config");
+    },
+  );
 
   it("restores explicit MiniMax-M3 maxTokens when rewriting budget thinking", () => {
     let capturedPayload: Record<string, unknown> | undefined;

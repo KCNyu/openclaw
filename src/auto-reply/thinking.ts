@@ -211,7 +211,20 @@ export function resolveThinkingProfile(params: {
           includeNativeMax: true,
         })
       : undefined;
-  const pluginProfile = providerProfile ?? anthropicMessagesProfile;
+  // Anthropic-compatible custom endpoints can advertise adaptive thinking even
+  // when their model IDs do not identify a Claude family.
+  const catalogEfforts = context.compat?.supportedReasoningEfforts;
+  const pluginProfile =
+    providerProfile ??
+    (anthropicMessagesProfile && catalogEfforts?.includes("adaptive")
+      ? {
+          levels: [
+            { id: "off" },
+            ...catalogEfforts.map((id) => ({ id })),
+          ],
+          defaultLevel: "adaptive" as const,
+        }
+      : anthropicMessagesProfile);
   if (pluginProfile) {
     const normalized = normalizeThinkingProfile(pluginProfile);
     if (
