@@ -527,6 +527,9 @@ function resolveToolErrorWarningPolicy(params: {
   if (params.suppressToolErrors) {
     return { showWarning: false, includeDetails };
   }
+  if (params.lastToolError.weixinFailureNotice) {
+    return { showWarning: true, includeDetails: false };
+  }
   const isMutatingToolError =
     params.lastToolError.mutatingAction ?? isLikelyMutatingToolName(params.lastToolError.toolName);
   if (isMutatingToolError) {
@@ -602,6 +605,7 @@ export function buildEmbeddedRunPayloads(params: {
     interactive?: ReplyPayload["interactive"];
     channelData?: Record<string, unknown>;
     nonTerminalToolErrorWarning?: boolean;
+    quietToolErrorWarning?: boolean;
     sourceReplyMirror?: {
       idempotencyKey?: string;
     };
@@ -882,11 +886,17 @@ export function buildEmbeddedRunPayloads(params: {
     // Surface mutating failures unless the assistant explicitly acknowledged the failed action.
     // Otherwise, keep the previous behavior and only surface non-recoverable failures when no reply exists.
     if (warningPolicy.showWarning) {
-      const warningText = formatToolErrorWarningText({
-        lastToolError: params.lastToolError,
-        includeDetails: warningPolicy.includeDetails,
-        useMarkdown,
-      });
+      const weixinNotice = params.lastToolError.weixinFailureNotice;
+      const warningText =
+        weixinNotice === "quiet"
+          ? "Tool failed."
+          : weixinNotice
+            ? `⚠️ 工具已连续失败 ${weixinNotice.consecutiveFailures} 次。`
+            : formatToolErrorWarningText({
+                lastToolError: params.lastToolError,
+                includeDetails: warningPolicy.includeDetails,
+                useMarkdown,
+              });
       const normalizedWarning = normalizeTextForComparison(warningText);
       const duplicateWarning = normalizedWarning
         ? replyItems.some((item) => {
@@ -901,6 +911,7 @@ export function buildEmbeddedRunPayloads(params: {
         replyItems.push({
           text: warningText,
           isError: true,
+          quietToolErrorWarning: weixinNotice === "quiet",
           nonTerminalToolErrorWarning:
             hasUserFacingAssistantReply &&
             shouldMarkNonTerminalToolErrorWarning(params.lastToolError),
@@ -924,6 +935,9 @@ export function buildEmbeddedRunPayloads(params: {
       }
       if (item.isError !== undefined) {
         payload.isError = item.isError;
+      }
+      if (item.quietToolErrorWarning) {
+        setReplyPayloadMetadata(payload, { quietToolErrorWarning: true });
       }
       if (item.nonTerminalToolErrorWarning) {
         setReplyPayloadMetadata(payload, {

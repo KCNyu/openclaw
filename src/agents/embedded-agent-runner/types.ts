@@ -170,6 +170,7 @@ export type EmbeddedAgentRunMeta = {
   providerStarted?: boolean;
   agentHarnessResultClassification?: "empty" | "reasoning-only" | "planning-only";
   terminalReplyKind?: "silent-empty";
+  quietToolFailure?: boolean;
   yielded?: boolean;
   error?: {
     kind:

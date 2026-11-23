@@ -510,6 +510,39 @@ describe("buildEmbeddedRunPayloads tool-error warnings", () => {
     });
   });
 
+  it("keeps quiet Weixin tool failures internal until terminal selection", () => {
+    const payloads = buildPayloads({
+      assistantTexts: ["正常回复"],
+      lastToolError: {
+        toolName: "exec",
+        meta: "private command",
+        weixinFailureNotice: "quiet",
+      },
+    });
+
+    expect(payloads[0]?.text).toBe("正常回复");
+    expect(payloads[1]?.text).not.toContain("private command");
+    expect(getReplyPayloadMetadata(payloads[1]!)).toMatchObject({
+      quietToolErrorWarning: true,
+    });
+  });
+
+  it("surfaces a concise Weixin alert after consecutive failures even with a final answer", () => {
+    const payloads = buildPayloads({
+      assistantTexts: ["正常回复"],
+      lastToolError: {
+        toolName: "read",
+        error: "private error details",
+        weixinFailureNotice: { consecutiveFailures: 3 },
+      },
+    });
+
+    expect(payloads).toEqual([
+      { text: "正常回复", replyToTag: false },
+      { text: "⚠️ 工具已连续失败 3 次。", isError: true },
+    ]);
+  });
+
   it("marks middleware tool-error warnings after assistant output as non-terminal", () => {
     // Middleware failures after useful assistant output warn the user without
     // replacing the successful answer as the terminal payload.

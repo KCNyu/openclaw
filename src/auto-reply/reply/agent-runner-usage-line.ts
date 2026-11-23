@@ -1,3 +1,4 @@
+import { scanFenceSpans } from "../../../packages/markdown-core/src/fences.js";
 import { hasNonzeroUsage, type NormalizedUsage } from "../../agents/usage.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { PluginHookReplyUsageState } from "../../plugins/hook-types.js";
@@ -8,7 +9,11 @@ import {
   type ModelCostConfig,
   resolveModelCostConfig,
 } from "../../utils/usage-format.js";
-import { getReplyPayloadMetadata, setReplyPayloadMetadata } from "../reply-payload.js";
+import {
+  getReplyPayloadMetadata,
+  isReplyPayloadStatusNotice,
+  setReplyPayloadMetadata,
+} from "../reply-payload.js";
 import { resolveEffectiveResponseUsage } from "../thinking.js";
 import type { ReplyPayload } from "../types.js";
 import { buildUsageContract } from "../usage-bar/contract.js";
@@ -111,22 +116,37 @@ export const resolveResponseUsageLine = (params: {
 };
 
 export const appendUsageLine = (payloads: ReplyPayload[], line: string): ReplyPayload[] => {
-  let index = -1;
-  for (let i = payloads.length - 1; i >= 0; i -= 1) {
-    if (payloads[i]?.text) {
-      index = i;
-      break;
-    }
-  }
+  // Some usage templates wrap the entire footer in a text fence.
+  const trimmedLine = line.trim();
+  const footerFences = scanFenceSpans(trimmedLine);
+  const [wrapper] = footerFences.spans;
+  const footer =
+    footerFences.spans.length === 1 &&
+    !footerFences.state.open &&
+    wrapper?.start === 0 &&
+    wrapper.end === trimmedLine.length
+      ? trimmedLine.split("\n").slice(1, -1).join("\n").trim()
+      : line;
+
+  const acceptsFooter = (payload: ReplyPayload) =>
+    !payload.isError &&
+    !payload.isReasoning &&
+    !payload.isCommentary &&
+    !isReplyPayloadStatusNotice(payload);
+  const index = payloads.findLastIndex((payload) => payload.text && acceptsFooter(payload));
   if (index === -1) {
-    return [...payloads, { text: line }];
+    return payloads.length === 0 || payloads.some(acceptsFooter)
+      ? [...payloads, { text: footer, isStatusNotice: true }]
+      : payloads;
   }
   const existing = payloads[index];
   const existingText = existing.text ?? "";
   const separator = existingText.endsWith("\n") ? "" : "\n";
+  const { open } = scanFenceSpans(existingText).state;
+  const closeFence = open ? `${open.indent}${open.marker}\n` : "";
   const next = {
     ...existing,
-    text: `${existingText}${separator}${line}`,
+    text: `${existingText}${separator}${closeFence}${footer}`,
   };
   const metadata = getReplyPayloadMetadata(existing);
   // Transcript mirrors must track the mutated text or source-reply delivery drifts.

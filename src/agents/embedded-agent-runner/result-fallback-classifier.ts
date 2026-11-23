@@ -275,7 +275,10 @@ export function classifyEmbeddedAgentRunResultForModelFallback(params: {
 
   // Legacy GPT-5 handling treats empty/reasoning-only payloads as fallback
   // candidates, while deliberate silent replies remain successful terminal work.
-  if (payloads.length === 0 && hasDeliberateSilentTerminalReply(params.result)) {
+  if (
+    payloads.length === 0 &&
+    (params.result.meta.quietToolFailure || hasDeliberateSilentTerminalReply(params.result))
+  ) {
     return null;
   }
   if (payloads.length === 0) {
