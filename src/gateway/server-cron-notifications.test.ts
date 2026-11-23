@@ -6,6 +6,7 @@ import type { CronJob } from "../cron/types.js";
 
 const mocks = vi.hoisted(() => ({
   fetchWithSsrFGuard: vi.fn(async (_request: unknown) => ({ release: vi.fn() })),
+  sendCronAnnouncePayloadStrict: vi.fn(async () => undefined),
   sendFailureNotificationAnnounce: vi.fn(),
 }));
 
@@ -17,11 +18,15 @@ vi.mock("../cron/delivery.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../cron/delivery.js")>();
   return {
     ...actual,
+    sendCronAnnouncePayloadStrict: mocks.sendCronAnnouncePayloadStrict,
     sendFailureNotificationAnnounce: mocks.sendFailureNotificationAnnounce,
   };
 });
 
-import { dispatchGatewayCronFinishedNotifications } from "./server-cron-notifications.js";
+import {
+  dispatchGatewayCronFinishedNotifications,
+  sendGatewayCronFailureAlert,
+} from "./server-cron-notifications.js";
 
 function requireRecord(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object") {
@@ -89,7 +94,15 @@ describe("dispatchGatewayCronFinishedNotifications", () => {
     );
   });
 
-  it("keeps configured failure destinations from inheriting the primary delivery thread", () => {
+  it.each([
+    {
+      runAtMs: Date.parse("2026-11-24T16:05:00.000Z"),
+      suffix: "\nRun started: 2026-11-25 00:05 GMT+8",
+    },
+    { runAtMs: undefined, suffix: "" },
+    { runAtMs: Number.NaN, suffix: "" },
+    { runAtMs: Number.MAX_SAFE_INTEGER, suffix: "" },
+  ])("formats the explicit failure destination start time ($runAtMs)", ({ runAtMs, suffix }) => {
     const logger = {
       warn: vi.fn(),
     };
@@ -124,11 +137,15 @@ describe("dispatchGatewayCronFinishedNotifications", () => {
         action: "finished",
         status: "error",
         error: "boom",
+        runAtMs,
       },
       job,
       deps: {} as CliDeps,
       logger,
-      resolveCronAgent: () => ({ agentId: "main", cfg: {} }),
+      resolveCronAgent: () => ({
+        agentId: "main",
+        cfg: { agents: { defaults: { userTimezone: "Asia/Shanghai" } } },
+      }),
     });
 
     expect(mocks.sendFailureNotificationAnnounce).toHaveBeenCalledTimes(1);
@@ -139,6 +156,9 @@ describe("dispatchGatewayCronFinishedNotifications", () => {
       sessionKey: "agent:main:telegram:group:-1001234567890:thread:42",
       inheritSessionThread: false,
     });
+    expect(mocks.sendFailureNotificationAnnounce.mock.calls[0]?.[5]).toBe(
+      `⚠️ Cron job "threaded failure dest" failed: boom${suffix}`,
+    );
   });
 
   it("redacts command action-required summaries before webhook completion delivery", async () => {
@@ -298,5 +318,67 @@ describe("dispatchGatewayCronFinishedNotifications", () => {
     expect(JSON.stringify(body)).not.toContain("www.example.com/device");
     expect(JSON.stringify(body)).not.toContain("123456");
     expect(JSON.stringify(body)).not.toContain("opaque-secret-value");
+  });
+});
+
+describe("sendGatewayCronFailureAlert", () => {
+  const runAtMs = Date.parse("2026-07-15T15:30:00.000Z");
+  const job = {
+    id: "failed-run",
+    name: "Failed run",
+    enabled: true,
+    createdAtMs: runAtMs,
+    updatedAtMs: runAtMs,
+    schedule: { kind: "every", everyMs: 60_000 },
+    sessionTarget: "isolated",
+    wakeMode: "next-heartbeat",
+    payload: { kind: "agentTurn", message: "report" },
+    state: {},
+  } satisfies CronJob;
+  const params = {
+    deps: {} as CliDeps,
+    logger: { warn: vi.fn() },
+    resolveCronAgent: () => ({
+      agentId: "main",
+      cfg: { agents: { defaults: { userTimezone: "America/New_York" } } },
+    }),
+    job,
+    text: "cron failed",
+    runAtMs,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("appends the start in the agent timezone to an immediate chat alert", async () => {
+    await sendGatewayCronFailureAlert({
+      ...params,
+      mode: "announce",
+      channel: "telegram",
+      to: "123",
+      accountId: "ops",
+    });
+    expect(mocks.sendCronAnnouncePayloadStrict).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: "cron failed\nRun started: 2026-07-15 11:30 EDT",
+        target: expect.objectContaining({ channel: "telegram", to: "123", accountId: "ops" }),
+      }),
+    );
+  });
+
+  it("sends the immediate webhook start as structured data", async () => {
+    await sendGatewayCronFailureAlert({
+      ...params,
+      mode: "webhook",
+      channel: "last",
+      to: "https://example.invalid/cron",
+    });
+    expect(webhookRequestBody()).toEqual({
+      jobId: job.id,
+      jobName: job.name,
+      message: "cron failed",
+      runAtMs,
+    });
   });
 });

@@ -384,7 +384,10 @@ function expectFailureAnnounceCall(params: {
     accountId: undefined,
     sessionKey: params.sessionKey,
   });
-  expect(args[5]).toBe(params.message);
+  expect(args[5].split("\n")).toEqual([
+    params.message,
+    expect.stringMatching(/^Run started: \d{4}-\d{2}-\d{2} \d{2}:\d{2} \S+$/),
+  ]);
 }
 
 async function runCronJobAndWaitForFinished(ws: WebSocket, jobId: string) {
