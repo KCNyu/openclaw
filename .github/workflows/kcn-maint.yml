@@ -31,6 +31,7 @@ jobs:
         run: |
           pnpm test src/cron/service/jobs.apply-patch.test.ts src/cron/service/ops.test.ts
           pnpm test src/cron/service.failure-alert.test.ts src/gateway/server-cron-notifications.test.ts src/gateway/server.cron.test.ts
+          pnpm test src/cron/isolated-agent/channel-output-policy.test.ts src/cron/isolated-agent/run.message-tool-policy.test.ts
           pnpm test src/cron/isolated-agent/run.cron-model-override-forwarding.test.ts src/agents/model-fallback.test.ts
           pnpm test src/llm/providers/stream-wrappers/minimax.test.ts
           pnpm test src/config/sessions/session-accessor.test.ts src/commands/daemon-install-helpers.test.ts
@@ -75,7 +76,13 @@ jobs:
           mkdir -p "$RUNNER_TEMP/kcn-smoke"
           cd "$RUNNER_TEMP/kcn-smoke"
           npm install --no-audit --no-fund "$RUNNER_TEMP"/kcn-package/openclaw-*.tgz
-          ./node_modules/.bin/openclaw --version | grep -E "^OpenClaw 2026\.7\.1-2 "
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const { commit } = JSON.parse(readFileSync("node_modules/openclaw/dist/build-info.json", "utf8"));
+            if (commit !== process.env.GITHUB_SHA) throw new Error(`Packed commit ${commit} does not match ${process.env.GITHUB_SHA}`);
+          '
+          env -u GIT_COMMIT -u GIT_SHA ./node_modules/.bin/openclaw --version |
+            grep -Fx "OpenClaw 2026.7.1-2 (${GITHUB_SHA:0:7})"
           node --input-type=module -e 'for (const name of ["channel-message", "command-auth", "infra-runtime"]) await import("openclaw/plugin-sdk/" + name);'
       - if: github.ref == 'refs/heads/kcn/7.1-maint'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
