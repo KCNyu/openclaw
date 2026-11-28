@@ -79,6 +79,35 @@ describe("plugin loader CLI metadata", () => {
     },
   );
 
+  it("lets an installed plugin capture a state handle without opening its store", async () => {
+    useNoBundledPlugins();
+    const id = "cli-state-handle";
+    const plugin = writePlugin({
+      id,
+      filename: `${id}.cjs`,
+      body: `module.exports = {
+        id: "${id}",
+        register(api) {
+          const state = api.runtime.state.openSyncKeyedStore({ namespace: "bindings" });
+          try { state.lookup("key"); }
+          catch (error) {
+            if (!String(error).includes("unavailable during CLI metadata")) throw error;
+            api.registerCli(() => {}, {
+              descriptors: [{name: "cli-state-handle", description: "State fixture", hasSubcommands: false}],
+            });
+            return;
+          }
+          throw new Error("CLI metadata accessed live plugin state");
+        },
+      };`,
+    });
+    const registry = await loadOpenClawPluginCliRegistry({
+      cache: false,
+      config: { plugins: { load: { paths: [plugin.file] }, allow: [id] } },
+    });
+    expect(registry.plugins.find((entry) => entry.id === id)?.status).toBe("loaded");
+  });
+
   it("suppresses trust warning logs during CLI metadata loads", async () => {
     useNoBundledPlugins();
     const stateDir = makeTempDir();
