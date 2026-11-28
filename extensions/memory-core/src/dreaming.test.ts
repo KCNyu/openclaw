@@ -2887,15 +2887,24 @@ describe("short-term dreaming trigger", () => {
     });
 
     expect(result?.handled).toBe(true);
-    expect(await fs.readFile(path.join(mainWorkspace, "MEMORY.md"), "utf-8")).toContain(
-      "Main workspace note.",
-    );
-    expect(await fs.readFile(path.join(alphaWorkspace, "MEMORY.md"), "utf-8")).toContain(
-      "Alpha backup note.",
-    );
-    expect(await fs.readFile(path.join(betaWorkspace, "MEMORY.md"), "utf-8")).toContain(
-      "Beta router note.",
-    );
+    expect(
+      await fs.readFile(
+        path.join(mainWorkspace, "memory", ".dreams", "promotion-candidates.md"),
+        "utf-8",
+      ),
+    ).toContain("Main workspace note.");
+    expect(
+      await fs.readFile(
+        path.join(alphaWorkspace, "memory", ".dreams", "promotion-candidates.md"),
+        "utf-8",
+      ),
+    ).toContain("Alpha backup note.");
+    expect(
+      await fs.readFile(
+        path.join(betaWorkspace, "memory", ".dreams", "promotion-candidates.md"),
+        "utf-8",
+      ),
+    ).toContain("Beta router note.");
     expect(logger.info).toHaveBeenCalledWith(
       "memory-core: dreaming promotion complete (workspaces=3, candidates=3, applied=3, failed=0).",
     );
