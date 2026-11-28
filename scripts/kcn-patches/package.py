@@ -97,7 +97,12 @@ def prepare(install, stage, manifest):
     (stage / 'package.json').write_text(json.dumps({'type': 'module'}))
     backup = stage / 'backups'
     backup.mkdir()
-    env = {**os.environ, 'CLAWOCK_PATCH_STAGE': str(stage), 'CLAWOCK_PATCH_BACKUP_DIR': str(backup)}
+    env = {
+        **os.environ,
+        'PYTHONDONTWRITEBYTECODE': '1',
+        'CLAWOCK_PATCH_STAGE': str(stage),
+        'CLAWOCK_PATCH_BACKUP_DIR': str(backup),
+    }
     for patch, _ in resolved:
         script = inside(ADAPTERS, patch['script'])
         command = ['bash', str(script)] if script.suffix == '.sh' else [

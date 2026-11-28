@@ -88,7 +88,9 @@ jobs:
           env -u GIT_COMMIT -u GIT_SHA ./node_modules/.bin/openclaw --version |
             grep -Fx "OpenClaw 2026.7.1-2 (${GITHUB_SHA:0:7})"
           node --input-type=module -e 'for (const name of ["channel-message", "command-auth", "infra-runtime"]) await import("openclaw/plugin-sdk/" + name);'
-      - if: github.ref == 'refs/heads/kcn/7.1-maint'
+      - if: >-
+          github.ref == 'refs/heads/kcn/7.1-maint' ||
+          github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: openclaw-kcn-linux-${{ github.sha }}
