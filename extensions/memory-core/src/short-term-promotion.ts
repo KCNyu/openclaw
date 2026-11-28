@@ -36,7 +36,7 @@ import {
   writeMemoryCoreWorkspaceEntries,
   writeMemoryCoreWorkspaceEntry,
 } from "./dreaming-state.js";
-import { compactMemoryForBudget, DEFAULT_MEMORY_FILE_MAX_CHARS } from "./memory-budget.js";
+import { compactMemoryForBudget } from "./memory-budget.js";
 import { resolveMemoryCoreNowMs, resolveMemoryCoreTimestamp } from "./time.js";
 
 const SHORT_TERM_PATH_RE = /(?:^|\/)memory\/(?:[^/]+\/)*(\d{4})-(\d{2})-(\d{2})(?:-[^/]+)?\.md$/;
@@ -263,12 +263,8 @@ type ApplyShortTermPromotionsOptions = {
   nowMs?: number;
   timezone?: string;
   /**
-   * Maximum size of MEMORY.md on disk after a promotion write, in
-   * characters. When the post-write size would exceed this budget, the
-   * oldest auto-promotion sections are compacted out before write so the
-   * file stays bounded and bootstrap injection keeps reaching new
-   * sessions. Pass `0` to disable compaction. Defaults to
-   * `DEFAULT_MEMORY_FILE_MAX_CHARS`. See #73691.
+   * Optional cap for callers working with a bounded candidate file.
+   * Normal dreaming preserves all pending candidates for review.
    */
   memoryFileMaxChars?: number;
   /**
@@ -2396,6 +2392,8 @@ function extractPromotionMarkers(memoryText: string): Set<string> {
   return markers;
 }
 
+export const PROMOTION_CANDIDATE_PATH = "memory/.dreams/promotion-candidates.md";
+
 export async function applyShortTermPromotions(
   options: ApplyShortTermPromotionsOptions,
 ): Promise<ApplyShortTermPromotionsResult> {
@@ -2415,7 +2413,7 @@ export async function applyShortTermPromotions(
     DEFAULT_PROMOTION_MIN_UNIQUE_QUERIES,
   );
   const maxAgeDays = toFiniteNonNegativeInt(options.maxAgeDays, -1);
-  const memoryPath = path.join(workspaceDir, "MEMORY.md");
+  const memoryPath = path.join(workspaceDir, PROMOTION_CANDIDATE_PATH);
 
   return await withShortTermLock(workspaceDir, async () => {
     const store = await readStore(workspaceDir, nowIso);
@@ -2500,7 +2498,7 @@ export async function applyShortTermPromotions(
         typeof options.memoryFileMaxChars === "number" &&
         Number.isFinite(options.memoryFileMaxChars)
           ? Math.max(0, Math.floor(options.memoryFileMaxChars))
-          : DEFAULT_MEMORY_FILE_MAX_CHARS;
+          : Number.MAX_SAFE_INTEGER;
       const compaction = compactMemoryForBudget({
         existingMemory,
         newSection: section,
@@ -2509,11 +2507,11 @@ export async function applyShortTermPromotions(
       compactedDates = compaction.droppedDates;
       const baseMemory = compaction.compacted;
       const header = baseMemory.trim().length > 0 ? "" : "# Long-Term Memory\n\n";
-      await fs.writeFile(
-        memoryPath,
-        `${header}${withTrailingNewline(baseMemory)}${section}`,
-        "utf-8",
-      );
+      await fs.mkdir(path.dirname(memoryPath), { recursive: true, mode: 0o700 });
+      await fs.writeFile(memoryPath, `${header}${withTrailingNewline(baseMemory)}${section}`, {
+        encoding: "utf-8",
+        mode: 0o600,
+      });
     }
 
     for (const candidate of rehydratedSelected) {

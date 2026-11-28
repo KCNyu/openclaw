@@ -638,7 +638,7 @@ export async function runShortTermDreamingPromotionIfTriggered(params: {
         nowMs: sweepNowMs,
       });
       totalApplied += applied.applied;
-      reportLines.push(`- Promoted ${applied.applied} candidate(s) into MEMORY.md.`);
+      reportLines.push(`- Queued ${applied.applied} candidate(s) for private review.`);
       if (params.config.verboseLogging) {
         const appliedSummary =
           applied.appliedCandidates.length > 0

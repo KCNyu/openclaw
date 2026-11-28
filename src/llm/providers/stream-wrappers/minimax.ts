@@ -1,5 +1,4 @@
 import type { StreamFn } from "../../../agents/runtime/index.js";
-import type { ThinkLevel } from "../../../auto-reply/thinking.js";
 import { streamSimple } from "../../stream.js";
 
 const MINIMAX_FAST_MODEL_IDS = new Map<string, string>([
@@ -106,14 +105,11 @@ export function createMinimaxFastModeWrapper(
  *
  * Skipped for MiniMax-M3 and M3.x, which emit proper Anthropic-shape thinking
  * blocks and require thinking enabled to produce any visible content.
- * The Anthropic transport builds `thinking: { type: "disabled" }` when no
- * resolved thinking level exists, so M3 removes that implicit disabled payload.
+ * The frozen desk profile always sends adaptive thinking for M3, including
+ * when the Anthropic transport omits thinking or supplies a disabled payload.
  * See {@link isMinimaxModelRequiringThinking}.
  */
-export function createMinimaxThinkingDisabledWrapper(
-  baseStreamFn: StreamFn | undefined,
-  thinkingLevel?: ThinkLevel,
-): StreamFn {
+export function createMinimaxThinkingDisabledWrapper(baseStreamFn: StreamFn | undefined): StreamFn {
   const underlying = baseStreamFn ?? streamSimple;
   return (model, context, options) => {
     if (!isMinimaxAnthropicMessagesModel(model)) {
@@ -127,19 +123,16 @@ export function createMinimaxThinkingDisabledWrapper(
       onPayload: (payload) => {
         if (payload && typeof payload === "object") {
           const payloadObj = payload as Record<string, unknown>;
-          if (requiresThinking) {
-            if (thinkingLevel === undefined && isDisabledThinkingPayload(payloadObj.thinking)) {
-              delete payloadObj.thinking;
-            } else if (
-              thinkingLevel !== "off" &&
-              (isEnabledThinkingPayload(payloadObj.thinking) ||
-                isDisabledThinkingPayload(payloadObj.thinking))
-            ) {
-              payloadObj.thinking = { type: "adaptive" };
-              const maxTokens = resolvePositiveMaxTokens(options?.maxTokens);
-              if (maxTokens !== undefined) {
-                payloadObj.max_tokens = maxTokens;
-              }
+          if (
+            requiresThinking &&
+            (payloadObj.thinking === undefined ||
+              isEnabledThinkingPayload(payloadObj.thinking) ||
+              isDisabledThinkingPayload(payloadObj.thinking))
+          ) {
+            payloadObj.thinking = { type: "adaptive" };
+            const maxTokens = resolvePositiveMaxTokens(options?.maxTokens);
+            if (maxTokens !== undefined) {
+              payloadObj.max_tokens = maxTokens;
             }
           }
           // M2.x only needs the shim when no earlier wrapper set thinking.

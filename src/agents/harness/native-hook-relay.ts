@@ -580,7 +580,8 @@ export function buildNativeHookRelayCommand(params: {
       ? ["openclaw"]
       : [params.nodeExecutable ?? process.execPath, executable];
   const nicePrefix = resolveNativeHookRelayNicePrefix(params.nice);
-  return shellQuoteArgs([
+  // On POSIX the hook runner kills the shell's PID on cancellation.
+  const command = shellQuoteArgs([
     ...nicePrefix,
     ...argv,
     "hooks",
@@ -598,6 +599,7 @@ export function buildNativeHookRelayCommand(params: {
     "--timeout",
     String(timeoutMs),
   ]);
+  return process.platform === "win32" ? command : `exec ${command}`;
 }
 
 function nativePreToolUseMayRunLoopDetection(registration: NativeHookRelayRegistration): boolean {

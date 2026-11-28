@@ -55,7 +55,7 @@ export default definePluginEntry({
         "codex",
         api.pluginConfig as Record<string, unknown>,
       ) ?? api.pluginConfig;
-    const bindingStore = createLazyCodexAppServerBindingStore(
+    const bindingStore = createLazyCodexAppServerBindingStore(() =>
       api.runtime.state.openSyncKeyedStore<StoredCodexAppServerBinding>({
         namespace: CODEX_APP_SERVER_BINDING_NAMESPACE,
         maxEntries: CODEX_APP_SERVER_BINDING_MAX_ENTRIES,

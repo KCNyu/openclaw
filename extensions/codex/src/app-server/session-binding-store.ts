@@ -11,12 +11,15 @@ export type { StoredCodexAppServerBinding } from "./session-binding.js";
 
 /** Defers schema compilation and auth loading until the first binding operation. */
 export function createLazyCodexAppServerBindingStore(
-  state: Pick<PluginStateSyncKeyedStore<StoredCodexAppServerBinding>, "lookup" | "update">,
+  openState: () => Pick<
+    PluginStateSyncKeyedStore<StoredCodexAppServerBinding>,
+    "lookup" | "update"
+  >,
 ): CodexAppServerBindingStore {
   let resolved: Promise<CodexAppServerBindingStore> | undefined;
   const store = () =>
     (resolved ??= import("./session-binding.js").then(({ createCodexAppServerBindingStore }) =>
-      createCodexAppServerBindingStore(state),
+      createCodexAppServerBindingStore(openState()),
     ));
   return {
     read: async (identity) => (await store()).read(identity),

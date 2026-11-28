@@ -49,6 +49,7 @@ import {
 } from "./provider-request-config.js";
 
 const DEFAULT_MAX_SDK_RETRY_WAIT_SECONDS = 60;
+const MINIMAX_RESPONSE_HEADER_TIMEOUT_MS = 60_000;
 const OPENAI_SDK_STREAM_CONTENT_SNIFF_BYTES = 2 * 1024;
 const log = createSubsystemLogger("provider-transport-fetch");
 
@@ -892,6 +893,15 @@ export function buildGuardedModelFetch(
       (swappedEgress.headers && init ? { ...init, headers: swappedEgress.headers } : init);
     const synthesizeJsonAsSse = await requestBodyHasStreamTrue(request, baseInit);
     const baseSignal = baseInit?.signal ?? undefined;
+    const isMinimaxAnthropic =
+      model.api === "anthropic-messages" &&
+      (model.provider === "minimax" || model.provider === "minimax-2");
+    const headerController = isMinimaxAnthropic ? new AbortController() : undefined;
+    const fetchSignal = headerController
+      ? baseSignal
+        ? AbortSignal.any([baseSignal, headerController.signal])
+        : headerController.signal
+      : baseSignal;
     const localServiceSignal = buildModelRequestSignal(baseSignal, requestTimeoutMs);
     const guardedFetchOptions = {
       url,
@@ -905,7 +915,7 @@ export function buildGuardedModelFetch(
       },
       dispatcherPolicy,
       timeoutMs: requestTimeoutMs,
-      ...(baseSignal ? { signal: baseSignal } : {}),
+      ...(fetchSignal ? { signal: fetchSignal } : {}),
       // Provider transport intentionally keeps the secure default and never
       // replays unsafe request bodies across cross-origin redirects.
       allowCrossOriginUnsafeRedirectReplay: false,
@@ -922,6 +932,16 @@ export function buildGuardedModelFetch(
         `proxy=${dispatcherPolicy ? "configured" : useEnvProxy ? "env" : "none"} ` +
         `policy=${policy ? "custom" : "default"}`,
     );
+    const headerTimeout = headerController
+      ? setTimeout(() => {
+          headerController.abort(
+            new DOMException(
+              `MiniMax response-header timeout after ${MINIMAX_RESPONSE_HEADER_TIMEOUT_MS}ms`,
+              "TimeoutError",
+            ),
+          );
+        }, MINIMAX_RESPONSE_HEADER_TIMEOUT_MS)
+      : undefined;
     try {
       localServiceLease = await ensureModelProviderLocalService(
         model,
@@ -939,7 +959,12 @@ export function buildGuardedModelFetch(
           `elapsedMs=${Date.now() - fetchStartedAt} ${summarizeError(error)}`,
       );
       localServiceLease?.release();
+      if (headerController?.signal.aborted) {
+        throw headerController.signal.reason;
+      }
       throw error;
+    } finally {
+      clearTimeout(headerTimeout);
     }
     let response = result.response;
     emitModelTransportDebug(

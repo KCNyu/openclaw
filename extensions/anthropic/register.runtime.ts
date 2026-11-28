@@ -592,11 +592,13 @@ function applyAnthropicSonnet5Cost(params: {
     return undefined;
   }
   const cost = resolveAnthropicSonnet5Cost();
+  const existingCost = params.model.cost;
   if (
-    params.model.cost.input === cost.input &&
-    params.model.cost.output === cost.output &&
-    params.model.cost.cacheRead === cost.cacheRead &&
-    params.model.cost.cacheWrite === cost.cacheWrite
+    existingCost &&
+    existingCost.input === cost.input &&
+    existingCost.output === cost.output &&
+    existingCost.cacheRead === cost.cacheRead &&
+    existingCost.cacheWrite === cost.cacheWrite
   ) {
     return undefined;
   }

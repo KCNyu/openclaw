@@ -108,9 +108,8 @@ const SESSION_CORPUS_RELATIVE_DIR = path.join("memory", ".dreams", "session-corp
 const SESSION_INGESTION_SCORE = 0.58;
 const SESSION_INGESTION_MAX_SNIPPET_CHARS = 280;
 const SESSION_INGESTION_MIN_SNIPPET_CHARS = 12;
-const SESSION_INGESTION_MAX_MESSAGES_PER_SWEEP = 240;
-const SESSION_INGESTION_MAX_MESSAGES_PER_FILE = 80;
-const SESSION_INGESTION_MIN_MESSAGES_PER_FILE = 12;
+const SESSION_INGESTION_MAX_MESSAGES_PER_SWEEP = 4_000;
+const SESSION_INGESTION_MAX_MESSAGES_PER_FILE = 400;
 const SESSION_INGESTION_MAX_TRACKED_MESSAGES_PER_SESSION = 4096;
 const SESSION_INGESTION_MAX_TRACKED_SCOPES = 2048;
 const SESSION_CHECKPOINT_TRANSCRIPT_FILENAME_RE = /\.checkpoint\..+\.jsonl$/i;
@@ -846,6 +845,7 @@ async function collectSessionIngestionBatches(params: {
     generatedByDreamingNarrative: boolean;
     generatedByCronRun: boolean;
     sessionPath: string;
+    direct: boolean;
   }> = [];
   for (const agentId of agentIds) {
     for (const entry of await listSessionTranscriptCorpusEntriesForAgent(agentId)) {
@@ -864,11 +864,15 @@ async function collectSessionIngestionBatches(params: {
         generatedByDreamingNarrative: entry.generatedByDreamingNarrative === true,
         generatedByCronRun: entry.generatedByCronRun === true,
         sessionPath: sessionPathForFile(absolutePath),
+        direct: /:direct:|:main$/.test(entry.sessionKey ?? ""),
       });
     }
   }
 
   const sortedFiles = sessionFiles.toSorted((a, b) => {
+    if (a.direct !== b.direct) {
+      return a.direct ? -1 : 1;
+    }
     if (a.agentId !== b.agentId) {
       return a.agentId.localeCompare(b.agentId);
     }
@@ -877,13 +881,6 @@ async function collectSessionIngestionBatches(params: {
 
   const totalCap = SESSION_INGESTION_MAX_MESSAGES_PER_SWEEP;
   let remaining = totalCap;
-  const perFileCap = Math.min(
-    SESSION_INGESTION_MAX_MESSAGES_PER_FILE,
-    Math.max(
-      SESSION_INGESTION_MIN_MESSAGES_PER_FILE,
-      Math.ceil(totalCap / Math.max(1, sortedFiles.length)),
-    ),
-  );
 
   for (const file of sortedFiles) {
     if (remaining <= 0) {
@@ -966,16 +963,15 @@ async function collectSessionIngestionBatches(params: {
 
     const lines = entry.content.length > 0 ? entry.content.split("\n") : [];
     const lineCount = lines.length;
-    let cursor =
+    // Resume both unfinished unchanged files and transcripts that grew since
+    // the previous sweep. The latter are append-only in the live corpus.
+    const canResume =
       previous &&
-      previous.mtimeMs === fingerprint.mtimeMs &&
-      previous.size === fingerprint.size &&
-      previous.contentHash === contentHash &&
-      previous.lineCount === lineCount
-        ? Math.max(0, Math.min(previous.lastContentLine, lineCount))
-        : 0;
+      ((previous.contentHash === contentHash && previous.lineCount === lineCount) ||
+        (fingerprint.size > previous.size && lineCount >= previous.lineCount));
+    let cursor = canResume ? Math.max(0, Math.min(previous.lastContentLine, lineCount)) : 0;
 
-    const fileCap = Math.max(1, Math.min(perFileCap, remaining));
+    const fileCap = Math.max(1, Math.min(SESSION_INGESTION_MAX_MESSAGES_PER_FILE, remaining));
     let fileCount = 0;
     let lastScannedContentLine = cursor;
     for (let index = cursor; index < lines.length; index += 1) {

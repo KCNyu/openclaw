@@ -134,6 +134,22 @@ describe("usage-bar segment forms", () => {
 });
 
 describe("usage-bar end-to-end with buildUsageContract", () => {
+  it("exposes exact cache ratio and separate session and turn costs", () => {
+    const contract = buildUsageContract({
+      usage: { input: 2, cacheRead: 1 },
+      turnUsd: 0.01,
+      sessionUsd: 0.25,
+    });
+    expect(contract.usage).toMatchObject({ cache_hit_pct: 33 });
+    expect(contract.usage).toHaveProperty("cache_hit_pct_exact", (1 / 3) * 100);
+    expect(contract.cost).toMatchObject({
+      turn_usd: 0.01,
+      session_usd: 0.25,
+      available: true,
+      session_available: true,
+    });
+  });
+
   it("renders a full footer from a reply usage snapshot", () => {
     const contract = buildUsageContract(
       {

@@ -225,6 +225,8 @@ export type SessionLifecycleArtifactCleanupParams = {
   storePath: string;
   /** Archive exact transcripts referenced by removed entries before the orphan marker scan. */
   archiveRemovedEntryTranscripts?: boolean;
+  /** Preserve recently created lifecycle entries while their transcript is initializing. */
+  protectInFlightSessions?: boolean;
   /** Matches the persisted session-key segment after `agent:<id>:`. */
   sessionKeySegmentPrefix: string;
   /** Marker that identifies transcript artifacts owned by this lifecycle. */
@@ -794,8 +796,19 @@ function lifecycleTranscriptIsReclaimable(params: {
   transcriptPath: string | null;
   nowMs: number;
   orphanTranscriptMinAgeMs: number;
+  entryUpdatedAt?: number;
+  protectInFlightSessions?: boolean;
 }): boolean {
   if (!params.transcriptPath || !fs.existsSync(params.transcriptPath)) {
+    const updatedAt = params.entryUpdatedAt;
+    if (
+      params.protectInFlightSessions &&
+      updatedAt &&
+      Number.isFinite(updatedAt) &&
+      updatedAt > 0
+    ) {
+      return params.nowMs - updatedAt >= params.orphanTranscriptMinAgeMs;
+    }
     return true;
   }
   try {
@@ -1607,6 +1620,8 @@ export async function cleanupSessionLifecycleArtifacts(
           transcriptPath,
           nowMs,
           orphanTranscriptMinAgeMs: params.orphanTranscriptMinAgeMs,
+          entryUpdatedAt: entry.updatedAt,
+          protectInFlightSessions: params.protectInFlightSessions,
         })
       ) {
         if (archiveRemovedEntryTranscripts) {

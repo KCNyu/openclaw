@@ -565,6 +565,7 @@ export function createFollowupRunner(params: {
       typing.markDispatchIdle();
       return;
     }
+    const runStartedAt = Date.now();
     const endDeliveryCorrelations = (queued.deliveryCorrelations ?? [])
       .map((correlation) => correlation.begin())
       .filter((end): end is () => void => typeof end === "function");
@@ -1540,6 +1541,7 @@ export function createFollowupRunner(params: {
         await persistRunSessionUsage({
           storePath,
           sessionKey: replySessionKey,
+          runStartedAt,
           cfg: runtimeConfig,
           usage,
           lastCallUsage: runResult.meta?.agentMeta?.lastCallUsage,
@@ -1679,6 +1681,10 @@ export function createFollowupRunner(params: {
         fallbackUsed: runResult.meta?.executionTrace?.fallbackUsed === true,
         agentId: run.agentId,
         sessionId: run.sessionId,
+        sessionUsd:
+          storePath && replySessionKey
+            ? loadSessionEntry({ storePath, sessionKey: replySessionKey })?.sessionCostUsd
+            : activeSessionEntry?.sessionCostUsd,
         chatType: queued.originatingChatType,
         authMode: runResult.meta?.requestShaping?.authMode ?? undefined,
         overrideSource: activeSessionEntry?.modelOverrideSource ?? undefined,
