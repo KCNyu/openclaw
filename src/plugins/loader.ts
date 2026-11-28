@@ -2982,6 +2982,28 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
   }
 }
 
+function createCliMetadataRuntime(): PluginRuntime {
+  function unavailable(): never {
+    throw new Error("Plugin state is unavailable during CLI metadata registration");
+  }
+  return {
+    state: {
+      // Pinned external plugins may capture a handle while registering CLI
+      // metadata. Only an activated runtime may access the underlying store.
+      openSyncKeyedStore: () => ({
+        register: unavailable,
+        registerIfAbsent: unavailable,
+        update: unavailable,
+        lookup: unavailable,
+        consume: unavailable,
+        delete: unavailable,
+        entries: unavailable,
+        clear: unavailable,
+      }),
+    },
+  } as PluginRuntime;
+}
+
 export async function loadOpenClawPluginCliRegistry(
   options: PluginLoadOptions = {},
 ): Promise<PluginRegistry> {
@@ -3349,7 +3371,7 @@ export async function loadOpenClawPluginCliRegistry(
       registrationMode: "cli-metadata",
       config: cfg,
       pluginConfig: validatedConfig.value,
-      runtime: {} as PluginRuntime,
+      runtime: createCliMetadataRuntime(),
       logger,
       resolvePath: (input) => resolveUserPath(input),
       handlers: {

@@ -1956,6 +1956,7 @@ export async function runReplyAgent(params: {
     await persistRunSessionUsage({
       storePath,
       sessionKey,
+      runStartedAt,
       cfg,
       usage,
       lastCallUsage: runResult.meta?.agentMeta?.lastCallUsage,
@@ -1975,6 +1976,9 @@ export async function runReplyAgent(params: {
       preserveFreshTotalTokensOnStaleUsage: preflightCompactionApplied,
     });
 
+    if (storePath && sessionKey) {
+      replyUsageState.sessionUsd = loadSessionEntry({ storePath, sessionKey })?.sessionCostUsd;
+    }
     const successfulSourceReplyDelivery = hasSuccessfulSourceReplyDelivery({
       blockReplyPipeline,
       directlySentBlockKeys,

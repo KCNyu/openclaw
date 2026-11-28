@@ -126,6 +126,9 @@ export async function createLocalEmbeddingProviderInProcess(
         }
         if (!embeddingContext) {
           const nextContext = await embeddingModel.createEmbeddingContext({
+            // Local recall shares the desk CPU with the gateway and cron.
+            threads: 1,
+            batchSize: 512,
             contextSize,
             createSignal: abortController.signal,
           });

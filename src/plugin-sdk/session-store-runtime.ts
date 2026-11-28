@@ -75,6 +75,7 @@ type UpsertSessionEntryParams = SessionStoreReadParams & {
 type SessionLifecycleArtifactsCleanupParams = {
   agentId?: string;
   archiveRemovedEntryTranscripts?: boolean;
+  protectInFlightSessions?: boolean;
   env?: NodeJS.ProcessEnv;
   orphanTranscriptMinAgeMs: number;
   sessionStore?: string;
@@ -196,6 +197,7 @@ export async function cleanupSessionLifecycleArtifacts(
   return await cleanupAccessorSessionLifecycleArtifacts({
     storePath,
     archiveRemovedEntryTranscripts: params.archiveRemovedEntryTranscripts,
+    protectInFlightSessions: params.protectInFlightSessions,
     sessionKeySegmentPrefix: params.sessionKeySegmentPrefix,
     transcriptContentMarker: params.transcriptContentMarker,
     orphanTranscriptMinAgeMs: params.orphanTranscriptMinAgeMs,

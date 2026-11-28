@@ -220,6 +220,18 @@ function isConfiguredModelUnavailableNarrativeError(raw: string): boolean {
   return false;
 }
 
+function isRetryableDreamingModelError(message: string): boolean {
+  if (/not (?:trusted|authorized|allowlisted)|allowlist|permission|forbidden/i.test(message)) {
+    return false;
+  }
+  return (
+    isConfiguredModelUnavailableNarrativeError(message) ||
+    /\b429\b|rate.?limit|quota|token plan|用量上限|\b50[234]\b|overloaded|temporarily unavailable/i.test(
+      message,
+    )
+  );
+}
+
 function formatNarrativeTerminalStatus(params: { status: string; error?: string }): string {
   const detail = params.error?.trim();
   return detail ? `status=${params.status} (${detail})` : `status=${params.status}`;
@@ -796,6 +808,7 @@ async function scrubDreamingNarrativeArtifacts(logger: Logger): Promise<void> {
         sessionKeySegmentPrefix: DREAMING_SESSION_KEY_PREFIX,
         transcriptContentMarker: DREAMING_TRANSCRIPT_RUN_MARKER,
         orphanTranscriptMinAgeMs: DREAMING_ORPHAN_MIN_AGE_MS,
+        protectInFlightSessions: true,
       });
       prunedEntries += result.removedEntries;
       archivedOrphans += result.archivedTranscriptArtifacts;
@@ -835,10 +848,35 @@ export async function generateAndAppendDreamNarrative(params: {
     const attempts: Array<{ sessionKey: string; runId: string | null }> = [];
     let successfulSessionKey: string | null = null;
     try {
-      const attemptModels = params.model ? [params.model, undefined] : [undefined];
+      const pluginConfig = getRuntimeConfig()?.plugins?.entries?.["memory-core"]?.config;
+      const dreaming = pluginConfig?.dreaming;
+      const fallbacks =
+        dreaming && typeof dreaming === "object" && "fallbacks" in dreaming
+          ? dreaming.fallbacks
+          : undefined;
+      const configured = Array.isArray(fallbacks);
+      const retryable = configured
+        ? isRetryableDreamingModelError
+        : isConfiguredModelUnavailableNarrativeError;
+      const attemptModels: Array<string | undefined> = configured
+        ? [
+            ...new Set(
+              [params.model, ...fallbacks].filter(
+                (value): value is string => typeof value === "string" && value.length > 0,
+              ),
+            ),
+          ]
+        : params.model
+          ? [params.model, undefined]
+          : [undefined];
+      if (attemptModels.length === 0) {
+        attemptModels.push(undefined);
+      }
 
       for (const [attemptIndex, attemptModel] of attemptModels.entries()) {
         const attemptSessionKey = buildNarrativeAttemptSessionKey(sessionKey, attemptIndex);
+        const hasFallback = attemptIndex + 1 < attemptModels.length;
+        const nextModel = attemptModels[attemptIndex + 1] ?? "the session default";
         const attempt = { sessionKey: attemptSessionKey, runId: null as string | null };
         attempts.push(attempt);
 
@@ -881,15 +919,16 @@ export async function generateAndAppendDreamNarrative(params: {
           }
 
           if (
+            hasFallback &&
             attemptModel &&
             result.status === "error" &&
-            isConfiguredModelUnavailableNarrativeError(result.error ?? "")
+            retryable(result.error ?? "")
           ) {
             params.logger.warn(
               `memory-core: narrative generation ended with ${formatNarrativeTerminalStatus({
                 status: result.status,
                 error: result.error,
-              })} for ${params.data.phase} phase using configured model "${attemptModel}"; retrying with the session default.`,
+              })} for ${params.data.phase} phase using configured model "${attemptModel}"; retrying with ${nextModel}.`,
             );
             continue;
           }
@@ -913,9 +952,9 @@ export async function generateAndAppendDreamNarrative(params: {
           });
           return;
         } catch (err) {
-          if (attemptModel && isConfiguredModelUnavailableNarrativeError(formatErrorMessage(err))) {
+          if (hasFallback && attemptModel && retryable(formatErrorMessage(err))) {
             params.logger.warn(
-              `memory-core: narrative generation could not start with configured model "${attemptModel}" for ${params.data.phase} phase; retrying with the session default (${formatErrorMessage(err)}).`,
+              `memory-core: narrative generation could not start with configured model "${attemptModel}" for ${params.data.phase} phase; retrying with ${nextModel} (${formatErrorMessage(err)}).`,
             );
             continue;
           }

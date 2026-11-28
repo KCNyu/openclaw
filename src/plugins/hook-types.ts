@@ -569,6 +569,7 @@ export type PluginHookReplyUsageState = {
   requested?: string;
   /** Estimated cost of this turn in USD, when a cost table is configured. */
   turnUsd?: number;
+  sessionUsd?: number;
   /** Wall-clock duration of the turn in milliseconds. */
   durationMs?: number;
   /** Owning agent's configured identity (name/emoji/avatar), when set. */

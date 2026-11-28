@@ -210,7 +210,7 @@ export function registerMemoryCli(program: Command) {
       `Minimum distinct query count (default: ${DEFAULT_PROMOTION_MIN_UNIQUE_QUERIES})`,
       (value: string) => parseMemoryCliNonNegativeIntegerOption(value, "--min-unique-queries"),
     )
-    .option("--apply", "Append selected candidates to MEMORY.md", false)
+    .option("--apply", "Queue selected candidates for review", false)
     .option("--include-promoted", "Include already promoted candidates", false)
     .option("--json", "Print JSON")
     .action(async (opts: MemoryPromoteCommandOptions) => {

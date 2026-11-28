@@ -1,4 +1,5 @@
 /** Persists usage, cost, model, and CLI session metadata after reply runs. */
+import path from "node:path";
 import {
   clearCliSession,
   setCliSessionBinding,
@@ -18,6 +19,7 @@ import {
 import { updateSessionEntry } from "../../config/sessions/session-accessor.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { logVerbose } from "../../globals.js";
+import { loadSessionCostSummary } from "../../infra/session-cost-usage.js";
 import { resolveNonNegativeNumber } from "../../shared/number-coercion.js";
 import { estimateUsageCost, resolveModelCostConfig } from "../../utils/usage-format.js";
 
@@ -90,10 +92,37 @@ function estimateSessionRunCostUsd(params: {
   return resolveNonNegativeNumber(estimateUsageCost({ usage: params.usage, cost }));
 }
 
+async function loadPreviousSessionCost(params: {
+  entry: SessionEntry;
+  storePath: string;
+  cfg: OpenClawConfig;
+  before: number;
+}): Promise<number | undefined> {
+  const { entry, storePath, cfg, before } = params;
+  const dir = path.dirname(entry.sessionFile || storePath);
+  const ids = new Set([...(entry.usageFamilySessionIds ?? []), entry.sessionId]);
+  let total: number | undefined;
+  for (const id of ids) {
+    if (!/^[A-Za-z0-9._-]+$/.test(id)) {
+      continue;
+    }
+    const sessionFile =
+      id === entry.sessionId && entry.sessionFile
+        ? entry.sessionFile
+        : path.join(dir, `${id}.jsonl`);
+    const summary = await loadSessionCostSummary({ sessionFile, config: cfg, endMs: before - 1 });
+    if (summary) {
+      total = (total ?? 0) + summary.totalCost;
+    }
+  }
+  return total;
+}
+
 /** Persists usage accounting and selected runtime metadata to the session store. */
 export async function persistSessionUsageUpdate(params: {
   storePath?: string;
   sessionKey?: string;
+  runStartedAt?: number;
   cfg?: OpenClawConfig;
   usage?: NormalizedUsage;
   /**
@@ -223,6 +252,21 @@ export async function persistSessionUsageUpdate(params: {
           // Fixes #69347: cost was inflated 1x-72x by accumulating on every persist.
           if (runEstimatedCostUsd !== undefined) {
             patch.estimatedCostUsd = runEstimatedCostUsd;
+          }
+          const runStartedAt = params.runStartedAt;
+          if (
+            !preserveUserFacingRunState &&
+            runStartedAt !== undefined &&
+            runStartedAt > (entry.sessionCostRunStartedAt ?? 0)
+          ) {
+            // The once-per-session baseline ends before the current turn.
+            const baseline =
+              resolveNonNegativeNumber(entry.sessionCostUsd) ??
+              (await loadPreviousSessionCost({ entry, storePath, cfg, before: runStartedAt }));
+            if (baseline !== undefined) {
+              patch.sessionCostUsd = baseline + (runEstimatedCostUsd ?? 0);
+              patch.sessionCostRunStartedAt = runStartedAt;
+            }
           }
           if ((hasFreshContextSnapshot || hasCompactionSnapshot) && !preserveUserFacingRunState) {
             patch.totalTokens = totalTokens;

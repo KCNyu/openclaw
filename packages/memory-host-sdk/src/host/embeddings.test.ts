@@ -146,7 +146,12 @@ describe("local embedding provider", () => {
     await provider.embedQuery("context size default test");
 
     expect(runtime.createEmbeddingContext).toHaveBeenCalledWith(
-      expect.objectContaining({ contextSize: 4096, createSignal: expect.any(AbortSignal) }),
+      expect.objectContaining({
+        contextSize: 4096,
+        threads: 1,
+        batchSize: 512,
+        createSignal: expect.any(AbortSignal),
+      }),
     );
   });
 

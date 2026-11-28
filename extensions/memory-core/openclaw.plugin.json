@@ -58,6 +58,10 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+            "fallbacks": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
               "mode": {
                 "type": "string",
                 "enum": ["inline", "separate", "both"]

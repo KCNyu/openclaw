@@ -14,7 +14,6 @@ import { vectorToBlob } from "./vector-blob.js";
 
 const FTS_QUERY_TOKEN_RE = /[\p{L}\p{N}_]+/gu;
 const SHORT_CJK_TRIGRAM_RE = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\u3131-\u3163]/u;
-const VECTOR_KNN_OVERSAMPLE_FACTOR = 8;
 // sqlite-vec v0.1.9 rejects KNN queries with k above 4096.
 const MAX_VECTOR_KNN_K = 4096;
 
@@ -203,7 +202,8 @@ export async function searchVector(params: {
         dist: number;
       }>;
 
-    const candidateLimit = Math.min(params.limit * VECTOR_KNN_OVERSAMPLE_FACTOR, MAX_VECTOR_KNN_K);
+    // Widen when model or source filtering leaves the first KNN query short.
+    const candidateLimit = Math.min(params.limit, MAX_VECTOR_KNN_K);
     let rows = runVectorQuery(candidateLimit);
     if (rows.length < params.limit) {
       const matchingChunkCount = readCount(

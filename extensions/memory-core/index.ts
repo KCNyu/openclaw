@@ -178,6 +178,37 @@ export default definePluginEntry({
       api.runtime.state.openKeyedStore<T>(options),
     );
     registerShortTermPromotionDreaming(api);
+    let warmup: ReturnType<typeof setTimeout> | undefined;
+    api.registerService({
+      id: "memory-local-warmup",
+      start: ({ config }) => {
+        warmup = setTimeout(async () => {
+          const startedAt = Date.now();
+          try {
+            const { sessionAgentId: agentId } = resolveSessionAgentIds({ config });
+            if (resolveMemorySearchConfig(config, agentId)?.provider !== "local") {
+              return;
+            }
+            const { manager } = await memoryRuntime.getMemorySearchManager({
+              cfg: config,
+              agentId,
+            });
+            if (!manager) {
+              throw new Error("memory manager unavailable");
+            }
+            const probe = await manager.probeEmbeddingAvailability();
+            if (!probe.ok) {
+              throw new Error(probe.error ?? "embedding probe failed");
+            }
+            api.logger.info(`memory warmup: local embeddings ready in ${Date.now() - startedAt}ms`);
+          } catch (err) {
+            api.logger.warn(`memory warmup failed: ${String(err)}`);
+          }
+        }, 5_000);
+        warmup.unref();
+      },
+      stop: () => clearTimeout(warmup),
+    });
     api.registerMemoryCapability({
       promptBuilder: buildPromptSection,
       flushPlanResolver: buildMemoryFlushPlan,

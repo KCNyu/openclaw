@@ -20,6 +20,7 @@ export function buildReplyUsageState(params: {
   fallbackUsed?: boolean;
   agentId: string;
   sessionId: string;
+  sessionUsd?: number;
   chatType?: string;
   authMode?: string;
   overrideSource?: string;
@@ -51,6 +52,7 @@ export function buildReplyUsageState(params: {
     fallbackUsed: params.fallbackUsed,
     agentId: params.agentId,
     sessionId: params.sessionId,
+    sessionUsd: params.sessionUsd,
     chatType: params.chatType,
     authMode: params.authMode,
     overrideSource: params.overrideSource,

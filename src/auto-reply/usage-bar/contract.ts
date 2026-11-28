@@ -17,8 +17,8 @@ export function buildUsageContract(
     hasSplitTokens || cacheRead !== undefined || cacheWrite !== undefined || total !== undefined;
 
   const promptTotal = (cacheRead ?? 0) + (cacheWrite ?? 0) + (input ?? 0);
-  const cacheHitPct =
-    promptTotal > 0 ? Math.round(((cacheRead ?? 0) / promptTotal) * 100) : undefined;
+  const cacheHitPctExact = promptTotal > 0 ? ((cacheRead ?? 0) / promptTotal) * 100 : undefined;
+  const cacheHitPct = cacheHitPctExact === undefined ? undefined : Math.round(cacheHitPctExact);
 
   const last = state.lastUsage;
   const lastPromptTotal = last
@@ -74,6 +74,7 @@ export function buildUsageContract(
       cache_write_tokens: cacheWrite,
       total_tokens: total,
       cache_hit_pct: cacheHitPct,
+      cache_hit_pct_exact: cacheHitPctExact,
       has_tokens: hasTokens,
       has_split_tokens: hasSplitTokens,
       has_total_only_tokens: hasTotalOnlyTokens,
@@ -95,7 +96,9 @@ export function buildUsageContract(
     },
     cost: {
       turn_usd: typeof state.turnUsd === "number" ? state.turnUsd : null,
+      session_usd: typeof state.sessionUsd === "number" ? state.sessionUsd : null,
       available: typeof state.turnUsd === "number",
+      session_available: typeof state.sessionUsd === "number",
     },
     timing: {
       duration_ms: typeof state.durationMs === "number" ? state.durationMs : null,

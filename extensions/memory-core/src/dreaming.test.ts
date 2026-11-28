@@ -2236,12 +2236,15 @@ describe("short-term dreaming trigger", () => {
     });
 
     expect(result?.handled).toBe(true);
-    const memoryText = await fs.readFile(path.join(workspaceDir, "MEMORY.md"), "utf-8");
+    const memoryText = await fs.readFile(
+      path.join(workspaceDir, "memory", ".dreams", "promotion-candidates.md"),
+      "utf-8",
+    );
     expect(memoryText).toContain("Move backups to S3 Glacier.");
     const dreamsText = await fs.readFile(path.join(workspaceDir, "DREAMS.md"), "utf-8");
     expect(dreamsText).toContain("## Deep Sleep");
     expect(dreamsText).toContain("- Ranked 1 candidate(s) for durable promotion.");
-    expect(dreamsText).toContain("- Promoted 1 candidate(s) into MEMORY.md.");
+    expect(dreamsText).toContain("- Queued 1 candidate(s) for private review.");
   });
 
   it("applies promotions when the managed dreaming token is embedded in a reminder body", async () => {
@@ -2292,7 +2295,10 @@ describe("short-term dreaming trigger", () => {
     });
 
     expect(result?.handled).toBe(true);
-    const memoryText = await fs.readFile(path.join(workspaceDir, "MEMORY.md"), "utf-8");
+    const memoryText = await fs.readFile(
+      path.join(workspaceDir, "memory", ".dreams", "promotion-candidates.md"),
+      "utf-8",
+    );
     expect(memoryText).toContain("Move backups to S3 Glacier.");
   });
 
@@ -2338,7 +2344,10 @@ describe("short-term dreaming trigger", () => {
     });
 
     expect(result?.handled).toBe(true);
-    const memoryText = await fs.readFile(path.join(workspaceDir, "MEMORY.md"), "utf-8");
+    const memoryText = await fs.readFile(
+      path.join(workspaceDir, "memory", ".dreams", "promotion-candidates.md"),
+      "utf-8",
+    );
     expect(memoryText).toContain("Move backups to S3 Glacier.");
   });
 
@@ -2380,7 +2389,10 @@ describe("short-term dreaming trigger", () => {
     });
 
     expect(result?.handled).toBe(true);
-    const memoryText = await fs.readFile(path.join(workspaceDir, "MEMORY.md"), "utf-8");
+    const memoryText = await fs.readFile(
+      path.join(workspaceDir, "memory", ".dreams", "promotion-candidates.md"),
+      "utf-8",
+    );
     expect(memoryText).toContain("Move backups to S3 Glacier.");
     const dreamsText = await fs.readFile(path.join(workspaceDir, "DREAMS.md"), "utf-8");
     expect(dreamsText).toContain("<!-- openclaw:dreaming:diary:start -->");
@@ -2435,7 +2447,7 @@ describe("short-term dreaming trigger", () => {
 
     expect(result?.handled).toBe(true);
     const memoryText = await fs
-      .readFile(path.join(workspaceDir, "MEMORY.md"), "utf-8")
+      .readFile(path.join(workspaceDir, "memory", ".dreams", "promotion-candidates.md"), "utf-8")
       .catch((err: unknown) => {
         if ((err as NodeJS.ErrnoException).code === "ENOENT") {
           return "";
@@ -2504,7 +2516,10 @@ describe("short-term dreaming trigger", () => {
     });
 
     expect(result?.handled).toBe(true);
-    const memoryText = await fs.readFile(path.join(workspaceDir, "MEMORY.md"), "utf-8");
+    const memoryText = await fs.readFile(
+      path.join(workspaceDir, "memory", ".dreams", "promotion-candidates.md"),
+      "utf-8",
+    );
     expect(memoryText).toContain("Move backups to S3 Glacier.");
   });
 
@@ -2563,7 +2578,10 @@ describe("short-term dreaming trigger", () => {
     });
 
     expect(result?.handled).toBe(true);
-    const memoryText = await fs.readFile(path.join(workspaceDir, "MEMORY.md"), "utf-8");
+    const memoryText = await fs.readFile(
+      path.join(workspaceDir, "memory", ".dreams", "promotion-candidates.md"),
+      "utf-8",
+    );
     expect(memoryText).toContain("Move backups to S3 Glacier.");
     // Detached cron narratives now go through a bounded queue
     // (see runDetachedDreamNarrative), so subagent.run lands a few extra
@@ -2608,7 +2626,9 @@ describe("short-term dreaming trigger", () => {
     expect(logger.info).toHaveBeenCalledWith(
       "memory-core: dreaming promotion skipped because limit=0.",
     );
-    await expectPathMissing(path.join(workspaceDir, "MEMORY.md"));
+    await expectPathMissing(
+      path.join(workspaceDir, "memory", ".dreams", "promotion-candidates.md"),
+    );
   });
 
   it("repairs recall artifacts before dreaming promotion runs", async () => {
@@ -2867,15 +2887,24 @@ describe("short-term dreaming trigger", () => {
     });
 
     expect(result?.handled).toBe(true);
-    expect(await fs.readFile(path.join(mainWorkspace, "MEMORY.md"), "utf-8")).toContain(
-      "Main workspace note.",
-    );
-    expect(await fs.readFile(path.join(alphaWorkspace, "MEMORY.md"), "utf-8")).toContain(
-      "Alpha backup note.",
-    );
-    expect(await fs.readFile(path.join(betaWorkspace, "MEMORY.md"), "utf-8")).toContain(
-      "Beta router note.",
-    );
+    expect(
+      await fs.readFile(
+        path.join(mainWorkspace, "memory", ".dreams", "promotion-candidates.md"),
+        "utf-8",
+      ),
+    ).toContain("Main workspace note.");
+    expect(
+      await fs.readFile(
+        path.join(alphaWorkspace, "memory", ".dreams", "promotion-candidates.md"),
+        "utf-8",
+      ),
+    ).toContain("Alpha backup note.");
+    expect(
+      await fs.readFile(
+        path.join(betaWorkspace, "memory", ".dreams", "promotion-candidates.md"),
+        "utf-8",
+      ),
+    ).toContain("Beta router note.");
     expect(logger.info).toHaveBeenCalledWith(
       "memory-core: dreaming promotion complete (workspaces=3, candidates=3, applied=3, failed=0).",
     );

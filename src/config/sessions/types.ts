@@ -404,6 +404,8 @@ export type SessionEntry = {
    */
   totalTokensFresh?: boolean;
   estimatedCostUsd?: number;
+  sessionCostUsd?: number;
+  sessionCostRunStartedAt?: number;
   cacheRead?: number;
   cacheWrite?: number;
   modelProvider?: string;
