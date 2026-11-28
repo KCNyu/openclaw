@@ -44,6 +44,8 @@ jobs:
           pnpm test src/agents/embedded-agent-runner/run.incomplete-turn.test.ts src/agents/embedded-agent-runner/run/tool-media-payloads.test.ts
           pnpm test extensions/telegram/src/webhook.test.ts
       - name: Pack the Linux desk profile
+        env:
+          OPENCLAW_KCN_MAINT_PACK: "1"
         run: |
           set -euo pipefail
           export OPENCLAW_BUNDLED_PLUGIN_BUILD_IDS="$(node scripts/kcn-bundled-plugin-ids.mjs)"
@@ -63,6 +65,7 @@ jobs:
           cd "$RUNNER_TEMP/kcn-package"
           test -f openclaw-2026.7.1-2.tgz
           tar -tzf openclaw-2026.7.1-2.tgz > inventory.txt
+          grep -qx 'package/dist/kcn-patches.json' inventory.txt
           grep -qx 'package/dist/extensions/telegram/openclaw.plugin.json' inventory.txt
           grep -qx 'package/dist/extensions/memory-core/openclaw.plugin.json' inventory.txt
           if grep -E '^package/dist(-runtime)?/extensions/(discord|googlechat|imessage|matrix|mattermost|msteams|signal|slack|zalo)/' inventory.txt; then
@@ -76,6 +79,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/kcn-smoke"
           cd "$RUNNER_TEMP/kcn-smoke"
           npm install --no-audit --no-fund "$RUNNER_TEMP"/kcn-package/openclaw-*.tgz
+          python3 "$GITHUB_WORKSPACE/scripts/kcn-patches/package.py" check node_modules/openclaw
           node --input-type=module -e '
             import { readFileSync } from "node:fs";
             const { commit } = JSON.parse(readFileSync("node_modules/openclaw/dist/build-info.json", "utf8"));

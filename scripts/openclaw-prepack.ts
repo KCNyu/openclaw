@@ -176,6 +176,9 @@ async function main(): Promise<void> {
   runPnpm(["build"]);
   runPnpm(["ui:build"]);
   ensurePreparedArtifacts();
+  if (process.env.OPENCLAW_KCN_MAINT_PACK === "1") {
+    run("python3", ["scripts/kcn-patches/package.py", "build", "."]);
+  }
   await writeDistInventory();
   runBuildSmoke();
   await preparePackageChangelog();
